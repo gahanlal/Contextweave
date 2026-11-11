@@ -87,16 +87,22 @@ class ContextWeave:
         packages: list[EvidencePackage],
     ) -> tuple[Chunk, ...]:
         package_by_id = {package.document_id: package for package in packages}
+        document_order = {
+            document_id: position
+            for position, document_id in enumerate(selected_document_ids)
+        }
         selected_chunks = []
         for document_id in selected_document_ids:
             package = package_by_id[document_id]
             selected_chunks.extend(
                 self.index.chunks[chunk_id] for chunk_id in package.included_chunk_ids
             )
-        selected_chunks.sort(key=lambda chunk: (
-            selected_document_ids.index(chunk.document_id),
-            chunk.sequence_number,
-        ))
+        selected_chunks.sort(
+            key=lambda chunk: (
+                document_order[chunk.document_id],
+                chunk.sequence_number,
+            )
+        )
         result = []
         seen: set[tuple[str, str]] = set()
         used_tokens = 0

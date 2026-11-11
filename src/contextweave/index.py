@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from heapq import nsmallest
 
 from contextweave.embeddings import EmbeddingProvider, cosine_similarity
 from contextweave.models import Chunk, Document, Relationship, SearchHit
@@ -50,13 +51,17 @@ class InMemoryIndex:
 
     def search(self, query: str, limit: int = 30) -> tuple[SearchHit, ...]:
         query_vector = self.embedding_provider.embed(query)
-        ranked = sorted(
+        scored = (
             (
                 (cosine_similarity(query_vector, chunk.embedding), chunk)
-                for chunk in self.chunks.values()
-            ),
-            key=lambda item: (-item[0], item[1].id),
-        )[:limit]
+            )
+            for chunk in self.chunks.values()
+        )
+        order_key = lambda item: (-item[0], item[1].id)
+        if limit < 0:
+            ranked = sorted(scored, key=order_key)[:limit]
+        else:
+            ranked = nsmallest(limit, scored, key=order_key)
         return tuple(
             SearchHit(chunk=chunk, similarity=score, rank=rank)
             for rank, (score, chunk) in enumerate(ranked, start=1)

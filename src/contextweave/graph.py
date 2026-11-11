@@ -50,6 +50,9 @@ class AdaptiveGraphRetriever:
         config: TraversalConfig | None = None,
     ) -> None:
         self.chunks = {chunk.id: chunk for chunk in chunks}
+        self.chunks_by_document: dict[str, dict[str, Chunk]] = {}
+        for chunk in self.chunks.values():
+            self.chunks_by_document.setdefault(chunk.document_id, {})[chunk.id] = chunk
         self.similarity = similarity
         self.config = config or TraversalConfig()
         self.adjacency: dict[str, list[Relationship]] = {}
@@ -66,11 +69,7 @@ class AdaptiveGraphRetriever:
         query_plan: QueryPlan,
         seed_hits: Iterable[SearchHit],
     ) -> EvidencePackage:
-        document_chunks = {
-            chunk_id: chunk
-            for chunk_id, chunk in self.chunks.items()
-            if chunk.document_id == document_id
-        }
+        document_chunks = self.chunks_by_document.get(document_id, {})
         seeds = []
         seen_seeds: set[str] = set()
         for hit in sorted(seed_hits, key=lambda item: (-item.similarity, item.rank)):
@@ -113,6 +112,7 @@ class AdaptiveGraphRetriever:
         included_set: set[str] = set()
         expanded_states: set[tuple[str, RelationshipType | None]] = set()
         direction_counts = {RelationshipType.PREVIOUS: 0, RelationshipType.NEXT: 0}
+        chunk_terms_cache: dict[str, frozenset[str]] = {}
         token_count = 0
 
         while queue and len(visited) < self.config.max_nodes:
@@ -128,7 +128,10 @@ class AdaptiveGraphRetriever:
             if state.chunk_id not in visited_set:
                 visited_set.add(state.chunk_id)
                 visited.append(state.chunk_id)
-            chunk_terms = terms(chunk.content)
+            chunk_terms = chunk_terms_cache.get(state.chunk_id)
+            if chunk_terms is None:
+                chunk_terms = terms(chunk.content)
+                chunk_terms_cache[state.chunk_id] = chunk_terms
             supports_requirement = any(
                 requirement.terms.intersection(chunk_terms)
                 for requirement in query_plan.requirements
@@ -190,9 +193,9 @@ class AdaptiveGraphRetriever:
                     )
                 )
 
-        supported = self._supported_requirements(
+        supported = self._supported_requirements_from_terms(
             query_plan,
-            (document_chunks[chunk_id] for chunk_id in included),
+            (chunk_terms_cache[chunk_id] for chunk_id in included),
         )
         return EvidencePackage(
             document_id=document_id,
@@ -247,9 +250,19 @@ class AdaptiveGraphRetriever:
         query_plan: QueryPlan,
         chunks: Iterable[Chunk],
     ) -> set[str]:
+        return AdaptiveGraphRetriever._supported_requirements_from_terms(
+            query_plan,
+            (terms(chunk.content) for chunk in chunks),
+        )
+
+    @staticmethod
+    def _supported_requirements_from_terms(
+        query_plan: QueryPlan,
+        chunk_terms: Iterable[frozenset[str]],
+    ) -> set[str]:
         content_terms = set()
-        for chunk in chunks:
-            content_terms.update(terms(chunk.content))
+        for terms_for_chunk in chunk_terms:
+            content_terms.update(terms_for_chunk)
         supported = set()
         for requirement in query_plan.requirements:
             if requirement.terms and content_terms.intersection(requirement.terms):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
+from heapq import nlargest, nsmallest
 
 from contextweave.models import (
     DocumentAssessment,
@@ -17,8 +18,7 @@ def score_sectors(hits: Iterable[SearchHit]) -> dict[str, float]:
         by_sector[hit.chunk.sector_id].append(hit)
     scores = {}
     for sector_id, sector_hits in by_sector.items():
-        sector_hits.sort(key=lambda hit: (-hit.similarity, hit.rank))
-        top = sector_hits[:5]
+        top = nsmallest(5, sector_hits, key=lambda hit: (-hit.similarity, hit.rank))
         peak = top[0].similarity
         strong_average = sum(hit.similarity for hit in top) / len(top)
         document_coverage = len({hit.chunk.document_id for hit in top})
@@ -55,8 +55,11 @@ def discover_documents(
             by_document[hit.chunk.document_id].append(hit)
     ranked = []
     for document_id, document_hits in by_document.items():
-        ordered = sorted(document_hits, key=lambda hit: (-hit.similarity, hit.rank))
-        strongest = ordered[:4]
+        strongest = nsmallest(
+            4,
+            document_hits,
+            key=lambda hit: (-hit.similarity, hit.rank),
+        )
         peak = strongest[0].similarity
         average = sum(hit.similarity for hit in strongest) / len(strongest)
         sections = len({hit.chunk.section_id for hit in strongest if hit.chunk.section_id})
@@ -84,7 +87,7 @@ def rerank_documents(
         package.document_id: (
             0.65 * max(package.similarities.values(), default=0.0)
             + 0.35 * (
-                sum(sorted(package.similarities.values(), reverse=True)[:3])
+                sum(nlargest(3, package.similarities.values()))
                 / max(1, min(3, len(package.similarities)))
             )
         )
