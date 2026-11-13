@@ -75,7 +75,6 @@ def rerank_documents(
     target_documents: int = 3,
     max_documents: int = 5,
     minimum_marginal_score: float = 0.18,
-    relevance_tie_tolerance: float = 0.02,
 ) -> tuple[tuple[str, ...], tuple[DocumentAssessment, ...]]:
     """Select complete document evidence packages after all expansions are ready."""
     package_list = list(packages)
@@ -97,6 +96,7 @@ def rerank_documents(
 
     selected: list[str] = []
     covered: set[str] = set()
+    coverage_scores = {requirement: 0.0 for requirement in all_requirements}
     assessments: dict[str, DocumentAssessment] = {}
     while len(selected) < min(max_documents, len(package_list)):
         remaining = [doc_id for doc_id in package_by_id if doc_id not in selected]
@@ -106,22 +106,35 @@ def rerank_documents(
         for document_id in remaining:
             package = package_by_id[document_id]
             new_coverage = package.supported_requirements - covered
-            marginal_coverage = len(new_coverage) / max(1, len(all_requirements))
+            package_scores = {
+                requirement: package.requirement_scores.get(
+                    requirement, float(requirement in package.supported_requirements)
+                )
+                for requirement in all_requirements
+            }
+            marginal_coverage = sum(
+                max(0.0, package_scores[requirement] - coverage_scores[requirement])
+                for requirement in all_requirements
+            ) / max(1, len(all_requirements))
             score = 0.55 * marginal_coverage + 0.45 * relevance[document_id]
+            if selected and not new_coverage and (
+                len(selected) >= target_documents
+                or score < minimum_marginal_score
+            ):
+                continue
             ranked_candidates.append((score, document_id, new_coverage, marginal_coverage))
-        best_score = max(candidate[0] for candidate in ranked_candidates)
-        near_ties = [
-            candidate
-            for candidate in ranked_candidates
-            if best_score - candidate[0] <= relevance_tie_tolerance
-        ]
-        score, document_id, new_coverage, marginal_coverage = near_ties[0]
-        if selected and not new_coverage and (
-            covered >= all_requirements or score < minimum_marginal_score
-        ):
+        if not ranked_candidates:
             break
+        score, document_id, new_coverage, marginal_coverage = min(
+            ranked_candidates, key=lambda candidate: (-candidate[0], candidate[1])
+        )
         selected.append(document_id)
         covered.update(package_by_id[document_id].supported_requirements)
+        for requirement in all_requirements:
+            score_for_requirement = package_by_id[document_id].requirement_scores.get(
+                requirement, float(requirement in package_by_id[document_id].supported_requirements)
+            )
+            coverage_scores[requirement] = max(coverage_scores[requirement], score_for_requirement)
         assessments[document_id] = DocumentAssessment(
             document_id=document_id,
             score=score,
@@ -134,9 +147,6 @@ def rerank_documents(
                 f"added {len(new_coverage)} previously uncovered requirement(s)."
             ),
         )
-        if covered >= all_requirements:
-            break
-
     for document_id, package in package_by_id.items():
         if document_id in assessments:
             continue
@@ -149,8 +159,7 @@ def rerank_documents(
             supported_requirements=package.supported_requirements,
             selected=False,
             explanation=(
-                "Excluded as redundant or lower-value after selected evidence covered "
-                "the requirements."
+                "Excluded by the document limit or marginal-value checks."
             ),
         )
     return tuple(selected), tuple(assessments[package.document_id] for package in package_list)

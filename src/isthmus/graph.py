@@ -13,7 +13,7 @@ from isthmus.models import (
     SearchHit,
     TraversalPath,
 )
-from isthmus.query import terms
+from isthmus.coverage import SUFFICIENT, aggregate_coverage, requirement_score
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +69,7 @@ class AdaptiveGraphRetriever:
         query_plan: QueryPlan,
         seed_hits: Iterable[SearchHit],
         similarity: Callable[[str, Chunk], float] | None = None,
+        score_requirements: Callable[[Chunk], dict[str, float]] | None = None,
     ) -> EvidencePackage:
         document_chunks = self.chunks_by_document.get(document_id, {})
         seeds = []
@@ -114,7 +115,19 @@ class AdaptiveGraphRetriever:
         included_set: set[str] = set()
         expanded_states: set[tuple[str, RelationshipType | None]] = set()
         direction_counts = {RelationshipType.PREVIOUS: 0, RelationshipType.NEXT: 0}
-        chunk_terms_cache: dict[str, frozenset[str]] = {}
+        requirement_scores_cache: dict[str, dict[str, float]] = {}
+        topic_terms = frozenset().union(
+            *(requirement.terms for requirement in query_plan.requirements if requirement.id != "exceptions")
+        )
+        def scores_for(chunk: Chunk) -> dict[str, float]:
+            if chunk.id not in requirement_scores_cache:
+                requirement_scores_cache[chunk.id] = (
+                    score_requirements(chunk) if score_requirements is not None else {
+                        requirement.id: requirement_score(requirement, chunk, topic_terms=topic_terms)
+                        for requirement in query_plan.requirements
+                    }
+                )
+            return requirement_scores_cache[chunk.id]
         token_count = 0
 
         while queue and len(visited) < self.config.max_nodes:
@@ -133,14 +146,7 @@ class AdaptiveGraphRetriever:
             if state.chunk_id not in visited_set:
                 visited_set.add(state.chunk_id)
                 visited.append(state.chunk_id)
-            chunk_terms = chunk_terms_cache.get(state.chunk_id)
-            if chunk_terms is None:
-                chunk_terms = terms(chunk.content)
-                chunk_terms_cache[state.chunk_id] = chunk_terms
-            supports_requirement = any(
-                requirement.terms.intersection(chunk_terms)
-                for requirement in query_plan.requirements
-            )
+            supports_requirement = any(score >= SUFFICIENT for score in scores_for(chunk).values())
             should_include = score >= self.config.include_threshold or supports_requirement
             if state.chunk_id in seen_seeds:
                 should_include = True
@@ -201,9 +207,10 @@ class AdaptiveGraphRetriever:
                     )
                 )
 
-        supported = self._supported_requirements_from_terms(
+        coverage = aggregate_coverage(
             query_plan,
-            (chunk_terms_cache[chunk_id] for chunk_id in included),
+            (document_chunks[chunk_id] for chunk_id in included),
+            scores_for,
         )
         return EvidencePackage(
             document_id=document_id,
@@ -215,7 +222,8 @@ class AdaptiveGraphRetriever:
             similarities=similarities,
             paths=tuple(paths),
             relationship_types_followed=tuple(followed),
-            supported_requirements=frozenset(supported),
+            supported_requirements=frozenset(key for key, value in coverage.items() if value >= SUFFICIENT),
+            requirement_scores=coverage,
             token_count=token_count,
             explanation=(
                 f"Expanded {len(seeds)} seed(s) bidirectionally; visited {len(visited)} "
@@ -252,27 +260,3 @@ class AdaptiveGraphRetriever:
         if relationship == RelationshipType.PREVIOUS:
             return self.config.max_backward
         return self.config.max_forward
-
-    @staticmethod
-    def _supported_requirements(
-        query_plan: QueryPlan,
-        chunks: Iterable[Chunk],
-    ) -> set[str]:
-        return AdaptiveGraphRetriever._supported_requirements_from_terms(
-            query_plan,
-            (terms(chunk.content) for chunk in chunks),
-        )
-
-    @staticmethod
-    def _supported_requirements_from_terms(
-        query_plan: QueryPlan,
-        chunk_terms: Iterable[frozenset[str]],
-    ) -> set[str]:
-        content_terms = set()
-        for terms_for_chunk in chunk_terms:
-            content_terms.update(terms_for_chunk)
-        supported = set()
-        for requirement in query_plan.requirements:
-            if requirement.terms and content_terms.intersection(requirement.terms):
-                supported.add(requirement.id)
-        return supported

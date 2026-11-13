@@ -75,7 +75,7 @@ def upload_document(
             if sector not in index.sectors:
                 raise ValueError("Create the sector before uploading a document.")
             document, chunks, relationships = parse_document_bytes(
-                file.file.read(), file.filename, sector
+                file.file.read(), file.filename, sector, embedding_provider=index.embedding_provider
             )
             index.add_document(document, chunks, relationships)
             return {"document": asdict(document), "chunks": len(chunks)}

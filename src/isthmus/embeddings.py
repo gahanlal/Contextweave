@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Protocol
 from urllib.parse import urlsplit
 
@@ -13,6 +13,23 @@ from openai import OpenAI
 class EmbeddingProvider(Protocol):
     def embed(self, text: str) -> tuple[float, ...]:
         """Return a normalized vector for text."""
+
+
+def token_limit(provider: EmbeddingProvider) -> tuple[Callable[[str], int], int] | None:
+    counter = getattr(provider, "count_tokens", None)
+    maximum = getattr(provider, "max_input_tokens", None)
+    if counter is None and maximum is None:
+        return None
+    if not callable(counter) or not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1:
+        raise ValueError("A token-aware embedding provider must supply count_tokens and a positive max_input_tokens.")
+    return counter, maximum
+
+
+def count_tokens(counter: Callable[[str], int], text: str) -> int:
+    count = counter(text)
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        raise ValueError("Embedding token counter must return a non-negative integer.")
+    return count
 
 
 class OpenAIEmbeddingProvider:
@@ -69,6 +86,16 @@ def embed_many(
     provider: EmbeddingProvider,
     texts: Sequence[str],
 ) -> tuple[tuple[float, ...], ...]:
+    budget = token_limit(provider)
+    if budget is not None:
+        counter, maximum = budget
+        for text in texts:
+            length = count_tokens(counter, text)
+            if length > maximum:
+                raise ValueError(
+                    f"Embedding input has {length} tokens, exceeding the provider limit of {maximum}; "
+                    "split the text with the provider's tokenizer before indexing or querying."
+                )
     batch_method = getattr(provider, "embed_many", None)
     if batch_method is not None:
         vectors = tuple(batch_method(texts))

@@ -6,7 +6,9 @@ from pptx import Presentation
 import pytest
 
 from isthmus.document_parsing import parse_document_bytes
-from isthmus.models import RelationshipType
+from isthmus.index import SQLiteIndex
+from isthmus.models import Chunk, Document, RelationshipType
+from conftest import FakeEmbeddingProvider
 
 
 def _bytes(document):
@@ -64,3 +66,79 @@ def test_text_and_unsupported_formats():
     assert len(chunks) == 2
     with pytest.raises(ValueError, match="Unsupported"):
         parse_document_bytes(b"x", "unknown.bin", "General")
+
+
+def test_token_aware_text_chunks_keep_provenance():
+    class Provider:
+        max_input_tokens = 12
+
+        def count_tokens(self, text):
+            return len(text) + 2
+
+        def embed(self, text):
+            return (1.0, 0.0)
+
+    provider = Provider()
+    _, chunks, relationships = parse_document_bytes(
+        b"alpha beta gamma delta", "notes.txt", "General", embedding_provider=provider,
+    )
+    assert len(chunks) > 1
+    assert all(provider.count_tokens(chunk.content) <= provider.max_input_tokens for chunk in chunks)
+    assert " ".join(chunk.content for chunk in chunks) == "alpha beta gamma delta"
+    assert all(chunk.source_location == "line 1" for chunk in chunks)
+    assert len(relationships) == 2 * (len(chunks) - 1)
+
+
+def test_content_revisions_coexist_and_legacy_index_is_preserved(tmp_path):
+    database = tmp_path / "index.db"
+    provider = FakeEmbeddingProvider()
+    first = parse_document_bytes(b"Original text.", "report.txt", "Finance")
+    renamed = parse_document_bytes(b"Original text.", "renamed.txt", "Finance")
+    changed = parse_document_bytes(b"Updated text.", "report.txt", "Finance")
+    assert first[0].id == renamed[0].id
+    assert first[1][0].id == renamed[1][0].id
+    assert first[0].revision_id == renamed[0].revision_id
+    assert first[0].id != changed[0].id
+    assert first[0].revision_id != changed[0].revision_id
+    with SQLiteIndex(provider, database) as index:
+        index.add_document(Document("legacy", "Old", "Finance"), [Chunk("legacy:c1", "legacy", "Finance", "old", 1)])
+        for parsed in (first, renamed, changed):
+            index.add_document(*parsed)
+    with SQLiteIndex(provider, database) as index:
+        assert set(index.documents) == {"legacy", first[0].id, changed[0].id}
+        assert {index.chunks[chunk_id].content for chunk_id in index.chunks} == {
+            "old", "Original text.", "Updated text."
+        }
+        assert index.documents[first[0].id].revision_id == first[0].revision_id
+        assert index.documents[changed[0].id].revision_id == changed[0].revision_id
+
+
+@pytest.mark.parametrize("filename", ["report.txt", "report.md", "report.docx", "report.pptx", "report.xlsx"])
+def test_each_format_uses_bytes_for_identity(filename):
+    if filename.endswith(".docx"):
+        source = DocxDocument()
+        source.add_paragraph("Text")
+        content = _bytes(source)
+    elif filename.endswith(".pptx"):
+        source = Presentation()
+        source.slides.add_slide(source.slide_layouts[1]).shapes.title.text = "Text"
+        content = _bytes(source)
+    elif filename.endswith(".xlsx"):
+        source = Workbook()
+        source.active["A1"] = "Text"
+        content = _bytes(source)
+    else:
+        content = b"Text"
+    first = parse_document_bytes(content, filename, "Finance")[0]
+    same = parse_document_bytes(content, "renamed" + filename[6:], "Finance")[0]
+    changed = parse_document_bytes(content + b"\n", filename, "Finance")[0]
+    assert first.id == same.id
+    assert first.revision_id == same.revision_id
+    assert first.id != changed.id
+    assert first.revision_id != changed.revision_id
+
+
+@pytest.mark.parametrize("sector", ["", "  ", None])
+def test_document_requires_nonempty_sector(sector):
+    with pytest.raises(ValueError, match="sector"):
+        parse_document_bytes(b"text", "Cyber-law.txt", sector)

@@ -1,6 +1,6 @@
 from conftest import FakeEmbeddingProvider
 from isthmus.index import InMemoryIndex
-from isthmus.models import Chunk, Document, Relationship, RelationshipType, SearchHit
+from isthmus.models import Chunk, Document, EvidencePackage, QueryPlan, QueryRequirement, Relationship, RelationshipType, SearchHit
 from isthmus.pipeline import Isthmus, PipelineConfig
 
 
@@ -76,7 +76,7 @@ def test_pipeline_reuses_graph_structure_until_index_changes():
 def test_pipeline_expands_bounded_fallback_candidates_when_evidence_is_incomplete():
     index = InMemoryIndex(CountingEmbeddingProvider())
     main = Chunk("main", "a", "sector", "travel reimbursement policy", 1)
-    exception = Chunk("exception", "b", "sector", "exceptions require approval", 1)
+    exception = Chunk("exception", "b", "sector", "travel reimbursement exceptions require approval", 1)
     index.add_document(Document("a", "Policy", "sector"), [main])
     index.add_document(Document("b", "Exceptions", "sector"), [exception])
     hits = (
@@ -90,3 +90,42 @@ def test_pipeline_expands_bounded_fallback_candidates_when_evidence_is_incomplet
     assert result.fallback_used
     assert result.expansion_order == ("a", "b")
     assert result.evidence_coverage["exceptions"] == "sufficient"
+
+
+def test_pipeline_does_not_treat_one_term_as_complete_evidence():
+    index = InMemoryIndex(CountingEmbeddingProvider())
+    index.add_document(
+        Document("doc", "Policy", "sector"),
+        [Chunk("contractor", "doc", "sector", "The contractor attended.", 1)],
+    )
+    result = Isthmus(index).query("contractor reimbursement")
+    assert result.evidence_coverage["main"] == "partial"
+    assert "main" not in result.evidence_packages[0].supported_requirements
+
+
+def test_context_budget_prioritizes_unique_requirement_evidence():
+    index = InMemoryIndex(CountingEmbeddingProvider())
+    chunks = [
+        Chunk("main", "a", "sector", "main", 1, token_count=5),
+        Chunk("redundant", "a", "sector", "redundant", 2, token_count=5),
+        Chunk("exception", "b", "sector", "exception", 1, token_count=5),
+    ]
+    index.add_document(Document("a", "A", "sector"), chunks[:2])
+    index.add_document(Document("b", "B", "sector"), chunks[2:])
+    def package(doc_id, ids):
+        return EvidencePackage(doc_id, (), (), ids, {}, (), (), frozenset(), 0, "")
+    plan = QueryPlan("question", "factual", (
+        QueryRequirement("main", "main", frozenset({"main"})),
+        QueryRequirement("exceptions", "exceptions", frozenset({"exceptions"})),
+    ), True, True)
+    scores = {
+        "main": {"main": 0.95},
+        "redundant": {"main": 0.9},
+        "exception": {"exceptions": 0.8},
+    }
+    pipeline = Isthmus(index, PipelineConfig(global_token_budget=10))
+    context = pipeline._assemble_context(
+        ("a", "b"), [package("a", ("main", "redundant")), package("b", ("exception",))],
+        plan, lambda chunk: scores[chunk.id],
+    )
+    assert tuple(chunk.id for chunk in context) == ("main", "exception")

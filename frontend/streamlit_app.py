@@ -128,6 +128,7 @@ def _documents_page(index: BackendIndex) -> None:
                         upload.getvalue(),
                         upload.name,
                         selected_sector,
+                        embedding_provider=index.embedding_provider,
                     )
                     index.add_document(document, chunks, relationships)
                 except (NoExtractableTextError, UnicodeDecodeError, ValueError, BadZipFile, PdfReadError, OpenAIError, sqlite3.Error) as error:
@@ -135,7 +136,7 @@ def _documents_page(index: BackendIndex) -> None:
                     break
                 indexed += 1
             if indexed:
-                st.success(f"Indexed {indexed} document(s). Re-uploading a file replaces its previous index.")
+                st.success(f"Indexed {indexed} document(s). Re-uploading identical bytes replaces that indexed revision.")
                 st.session_state.pop("retrieval_result", None)
                 st.session_state.pop("generated_answer", None)
 

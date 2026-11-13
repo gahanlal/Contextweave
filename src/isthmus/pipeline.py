@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from isthmus.coverage import aggregate_coverage, coverage_status, semantic_scores
+from isthmus.embeddings import embed_many, normalize_vector
 from isthmus.graph import AdaptiveGraphRetriever, TraversalConfig
 from isthmus.index import InMemoryIndex
-from isthmus.models import Chunk, EvidencePackage, RetrievalResult, SearchHit
-from isthmus.query import understand_query
+from isthmus.models import Chunk, EvidencePackage, QueryPlan, RetrievalResult, SearchHit
+from isthmus.query import QueryPlanner, planner_from_environment, understand_query
 from isthmus.selection import discover_documents, rerank_documents, score_sectors, select_sectors
 
 
@@ -25,9 +28,15 @@ class PipelineConfig:
 class Isthmus:
     """Orchestrates global retrieval through document-level evidence selection."""
 
-    def __init__(self, index: InMemoryIndex, config: PipelineConfig | None = None) -> None:
+    def __init__(
+        self,
+        index: InMemoryIndex,
+        config: PipelineConfig | None = None,
+        query_planner: QueryPlanner | None = None,
+    ) -> None:
         self.index = index
         self.config = config or PipelineConfig()
+        self.query_planner = query_planner if query_planner is not None else planner_from_environment()
         self._graph_retriever: AdaptiveGraphRetriever | None = None
         self._graph_index_version = -1
 
@@ -38,9 +47,27 @@ class Isthmus:
         query_vector: tuple[float, ...] | None = None,
         global_hits: tuple[SearchHit, ...] | None = None,
     ) -> RetrievalResult:
-        plan = understand_query(text)
+        plan = self.query_planner.plan(text) if self.query_planner else understand_query(text)
         if query_vector is None:
             query_vector = self.index.embed_query(text)
+        requirement_vectors = {
+            requirement.id: query_vector
+            for requirement in plan.requirements
+            if requirement.description == plan.original_query
+        }
+        additional = [
+            requirement for requirement in plan.requirements
+            if requirement.id not in requirement_vectors
+        ]
+        if additional:
+            vectors = embed_many(
+                self.index.embedding_provider,
+                [requirement.description for requirement in additional],
+            )
+            requirement_vectors.update(
+                (requirement.id, normalize_vector(vector))
+                for requirement, vector in zip(additional, vectors)
+            )
         hits = global_hits
         if hits is None:
             hits = self.index.search_by_vector(
@@ -67,6 +94,7 @@ class Isthmus:
             query_vector,
             chunk,
         )
+        requirement_similarity = lambda chunk: semantic_scores(plan, chunk, requirement_vectors)
         expansion_order = []
         packages: list[EvidencePackage] = []
         for document_id in candidate_documents:
@@ -77,6 +105,7 @@ class Isthmus:
                     plan,
                     hit_groups[document_id],
                     similarity=similarity,
+                    score_requirements=requirement_similarity,
                 )
             )
 
@@ -86,10 +115,10 @@ class Isthmus:
             target_documents=self.config.target_documents,
             max_documents=self.config.max_selected_documents,
         )
-        context = self._assemble_context(selected_documents, packages)
-        coverage = self._coverage(plan, context)
+        context = self._assemble_context(selected_documents, packages, plan, requirement_similarity)
+        coverage = self._coverage(plan, context, requirement_similarity)
         fallback_used = False
-        if "insufficient" in coverage.values():
+        if any(value != "sufficient" for value in coverage.values()):
             fallback_candidates = discover_documents(
                 hits,
                 selected_sectors,
@@ -109,6 +138,7 @@ class Isthmus:
                             plan,
                             hit_groups[document_id],
                             similarity=similarity,
+                            score_requirements=requirement_similarity,
                         )
                     )
                 candidate_documents += extra_documents
@@ -118,8 +148,8 @@ class Isthmus:
                     target_documents=self.config.target_documents,
                     max_documents=self.config.max_selected_documents,
                 )
-                context = self._assemble_context(selected_documents, packages)
-                coverage = self._coverage(plan, context)
+                context = self._assemble_context(selected_documents, packages, plan, requirement_similarity)
+                coverage = self._coverage(plan, context, requirement_similarity)
         return RetrievalResult(
             query_plan=plan,
             global_hits=hits,
@@ -153,11 +183,12 @@ class Isthmus:
         self,
         selected_document_ids: tuple[str, ...],
         packages: list[EvidencePackage],
+        plan: QueryPlan,
+        score_requirements: Callable[[Chunk], Mapping[str, float]],
     ) -> tuple[Chunk, ...]:
         package_by_id = {package.document_id: package for package in packages}
-        result = []
+        candidates = []
         seen: set[tuple[str, str]] = set()
-        used_tokens = 0
         for document_id in selected_document_ids:
             package = package_by_id[document_id]
             for chunk_id in package.included_chunk_ids:
@@ -165,19 +196,34 @@ class Isthmus:
                 key = (chunk.document_id, chunk.content_hash or chunk.content)
                 if key in seen:
                     continue
-                if used_tokens + chunk.token_count > self.config.global_token_budget:
-                    continue
-                result.append(chunk)
                 seen.add(key)
-                used_tokens += chunk.token_count
-        return tuple(result)
+                candidates.append((chunk, score_requirements(chunk)))
+        coverage = {requirement.id: 0.0 for requirement in plan.requirements}
+        selected: set[str] = set()
+        used_tokens = 0
+        while True:
+            eligible = [
+                (position, chunk, scores)
+                for position, (chunk, scores) in enumerate(candidates)
+                if chunk.id not in selected
+                and used_tokens + chunk.token_count <= self.config.global_token_budget
+            ]
+            if not eligible:
+                break
+            _, chunk, scores = max(
+                eligible,
+                key=lambda item: (
+                    sum(max(0.0, item[2].get(key, 0.0) - value) for key, value in coverage.items()),
+                    -item[0],
+                ),
+            )
+            selected.add(chunk.id)
+            used_tokens += chunk.token_count
+            for key in coverage:
+                coverage[key] = max(coverage[key], scores.get(key, 0.0))
+        return tuple(chunk for chunk, _ in candidates if chunk.id in selected)
 
     @staticmethod
-    def _coverage(plan, context: tuple[Chunk, ...]) -> dict[str, str]:
-        supported = AdaptiveGraphRetriever._supported_requirements(plan, context)
-        return {
-            requirement.id: (
-                "sufficient" if requirement.id in supported else "insufficient"
-            )
-            for requirement in plan.requirements
-        }
+    def _coverage(plan, context: tuple[Chunk, ...], scorer) -> dict[str, str]:
+        scores = aggregate_coverage(plan, context, scorer)
+        return {key: coverage_status(score) for key, score in scores.items()}

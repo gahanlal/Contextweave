@@ -8,13 +8,19 @@ from conftest import FakeEmbeddingProvider
 
 
 class FakeAnswerProvider:
-    def __init__(self, response):
+    def __init__(self, response, assessment='{"supported": true}'):
         self.response = response
+        self.assessment = assessment
         self.prompt = None
+        self.assessment_prompt = None
 
     def generate(self, prompt):
         self.prompt = json.loads(prompt)
         return self.response
+
+    def assess(self, prompt):
+        self.assessment_prompt = json.loads(prompt)
+        return self.assessment
 
 
 def test_generate_answer_resolves_citations_to_retrieved_sources():
@@ -28,6 +34,19 @@ def test_generate_answer_resolves_citations_to_retrieved_sources():
     assert answer.citations[0].location == result.context[0].source_location
     assert provider.prompt["question"] == result.query_plan.original_query
     assert provider.prompt["evidence"][0]["content"] == result.context[0].content
+    assert provider.assessment_prompt["answer"] == answer.text
+    assert provider.assessment_prompt["evidence"][0]["content"] == result.context[0].content
+
+
+@pytest.mark.parametrize("assessment", [
+    '{"supported": false}', '{"supported": "true"}', '{}', 'not json',
+])
+def test_generate_answer_rejects_failed_or_invalid_assessment(assessment):
+    pipeline = build_demo(FakeEmbeddingProvider())
+    result = pipeline.query("travel reimbursement")
+    provider = FakeAnswerProvider('{"answer": "Unsupported claim [S1]."}', assessment)
+    with pytest.raises(ValueError, match="assessment"):
+        generate_answer(result, pipeline.index.documents, provider)
 
 
 @pytest.mark.parametrize("response", [
@@ -69,8 +88,12 @@ def test_openai_answer_provider_uses_selected_model(monkeypatch):
 
     monkeypatch.setattr("isthmus.generation.OpenAI", Client)
     monkeypatch.setenv("ISTHMUS_ANSWER_API_KEY", "test")
-    assert OpenAIAnswerProvider("my-model").generate("prompt") == '{"answer":"ok [S1]"}'
+    provider = OpenAIAnswerProvider("my-model")
+    assert provider.generate("prompt") == '{"answer":"ok [S1]"}'
+    provider.assess("assessment")
     assert calls[0]["model"] == "my-model"
+    assert "supported" in calls[1]["messages"][0]["content"]
+    assert calls[1]["messages"][1]["content"] == "assessment"
 
 
 def test_anthropic_answer_provider_uses_selected_model(monkeypatch):
@@ -89,5 +112,9 @@ def test_anthropic_answer_provider_uses_selected_model(monkeypatch):
 
     monkeypatch.setattr("isthmus.generation.Anthropic", Client)
     monkeypatch.setenv("ISTHMUS_ANSWER_API_KEY", "test")
-    assert AnthropicAnswerProvider("chosen-model").generate("prompt") == '{"answer":"ok [S1]"}'
+    provider = AnthropicAnswerProvider("chosen-model")
+    assert provider.generate("prompt") == '{"answer":"ok [S1]"}'
+    provider.assess("assessment")
     assert calls[0]["model"] == "chosen-model"
+    assert "supported" in calls[1]["system"]
+    assert calls[1]["messages"][0]["content"] == "assessment"

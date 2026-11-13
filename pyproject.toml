@@ -24,6 +24,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 ui = ["streamlit>=1.35"]
+evaluation = ["huggingface-hub>=0.16.4"]
 
 [project.scripts]
 isthmus-demo = "isthmus.demo:main"

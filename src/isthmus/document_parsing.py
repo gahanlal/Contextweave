@@ -14,7 +14,8 @@ from docx.text.paragraph import Paragraph
 from openpyxl import load_workbook
 from pptx import Presentation
 
-from isthmus.ingestion import NoExtractableTextError, _split_text, parse_pdf_bytes
+from isthmus.embeddings import EmbeddingProvider, token_limit
+from isthmus.ingestion import NoExtractableTextError, _require_sector, _source_identity, _split_text, parse_pdf_bytes
 from isthmus.models import Chunk, Document, Relationship, RelationshipType
 
 
@@ -32,13 +33,16 @@ def parse_document_bytes(
     filename: str,
     sector_id: str,
     max_words_per_chunk: int = 300,
+    *,
+    embedding_provider: EmbeddingProvider | None = None,
 ) -> tuple[Document, tuple[Chunk, ...], tuple[Relationship, ...]]:
     path = Path(filename)
     suffix = path.suffix.casefold()
     if max_words_per_chunk < 1:
         raise ValueError("max_words_per_chunk must be positive")
+    _require_sector(sector_id)
     if suffix == ".pdf":
-        return parse_pdf_bytes(content, filename, sector_id, max_words_per_chunk)
+        return parse_pdf_bytes(content, filename, sector_id, max_words_per_chunk, embedding_provider=embedding_provider)
     if suffix in (".txt", ".md"):
         text = content.decode("utf-8-sig")
         blocks = _text_blocks(text, markdown=suffix == ".md")
@@ -50,13 +54,14 @@ def parse_document_bytes(
         blocks = _xlsx_blocks(content)
     else:
         raise ValueError(f"Unsupported document format: {suffix or '(none)'}")
-    document_id = hashlib.sha256(path.name.casefold().encode("utf-8")).hexdigest()[:20]
-    document = Document(document_id, path.stem, sector_id)
+    document_id, revision_id = _source_identity(BytesIO(content))
+    document = Document(document_id, path.stem, sector_id, revision_id)
     chunks: list[Chunk] = []
     relationships: list[Relationship] = []
     headings: dict[tuple[str, ...], str] = {}
+    budget = token_limit(embedding_provider) if embedding_provider is not None else None
     for block in blocks:
-        for part in _split_text(block.content, max_words_per_chunk):
+        for part in _split_text(block.content, max_words_per_chunk, budget):
             number = len(chunks) + 1
             chunk = Chunk(
                 id=f"{document_id}:c{number}",

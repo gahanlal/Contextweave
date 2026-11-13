@@ -96,6 +96,7 @@ class EvidencePackage:
     supported_requirements: frozenset[str]
     token_count: int
     explanation: str
+    requirement_scores: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

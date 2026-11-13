@@ -16,6 +16,33 @@ class FixedEmbeddingProvider:
         return (1.0, 0.0)
 
 
+@pytest.mark.parametrize("persistent", [False, True])
+def test_token_aware_provider_rejects_oversized_inputs_before_embedding(tmp_path, persistent):
+    class Provider:
+        max_input_tokens = 5
+
+        def __init__(self):
+            self.calls = 0
+
+        def count_tokens(self, text):
+            return len(text)
+
+        def embed(self, text):
+            self.calls += 1
+            return (1.0, 0.0)
+
+    provider = Provider()
+    index = SQLiteIndex(provider, tmp_path / "limit.db") if persistent else InMemoryIndex(provider)
+    with pytest.raises(ValueError, match="exceeding the provider limit"):
+        index.add_document(Document("doc", "Document", "sector"), [Chunk("c", "doc", "sector", "too long", 1)])
+    with pytest.raises(ValueError, match="exceeding the provider limit"):
+        index.embed_query("too long")
+    assert provider.calls == 0
+    assert not index.documents
+    if persistent:
+        index.close()
+
+
 def test_search_returns_top_k_with_deterministic_ties():
     index = InMemoryIndex(FixedEmbeddingProvider())
     document = Document("doc", "Document", "sector")

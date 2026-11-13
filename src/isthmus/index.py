@@ -106,7 +106,7 @@ class InMemoryIndex:
         return self.search_by_vector(self.embed_query(query), limit)
 
     def embed_query(self, query: str) -> tuple[float, ...]:
-        return normalize_vector(self.embedding_provider.embed(query))
+        return normalize_vector(embed_many(self.embedding_provider, [query])[0])
 
     def search_by_vector(
         self,

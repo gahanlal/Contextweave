@@ -15,6 +15,13 @@ from isthmus.ingestion import NoExtractableTextError, parse_pdf
 from isthmus.pipeline import Isthmus
 
 
+def _sector_argument(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise argparse.ArgumentTypeError("sector must not be empty")
+    return value
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="isthmus")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -24,6 +31,8 @@ def main() -> None:
         help="Extract PDFs, create online embeddings, and store them in SQLite.",
     )
     index_parser.add_argument("--pdf-dir", type=Path, default=Path("testfiles"))
+    index_parser.add_argument("--sector", required=True, type=_sector_argument,
+                              help="Explicit sector assigned to every PDF in this batch.")
     index_parser.add_argument("--database", type=Path, default=Path("isthmus.db"))
     index_parser.add_argument("--model")
     index_parser.add_argument("--dimensions", type=int)
@@ -62,7 +71,7 @@ def main() -> None:
     )
 
     if args.command == "index-pdfs":
-        _index_pdfs(args.pdf_dir, args.database, provider)
+        _index_pdfs(args.pdf_dir, args.database, provider, args.sector)
     else:
         _query(
             " ".join(args.question), args.database, provider, args.answer,
@@ -75,6 +84,7 @@ def _index_pdfs(
     pdf_directory: Path,
     database_path: Path,
     provider: OpenAIEmbeddingProvider,
+    sector_id: str,
 ) -> None:
     if not pdf_directory.is_dir():
         raise NotADirectoryError(f"PDF directory does not exist: {pdf_directory}")
@@ -88,7 +98,7 @@ def _index_pdfs(
     with open_index(provider, database_path) as index:
         for path in pdf_paths:
             try:
-                document, chunks, relationships = parse_pdf(path)
+                document, chunks, relationships = parse_pdf(path, sector_id, embedding_provider=index.embedding_provider)
             except NoExtractableTextError as error:
                 print(f"Skipped {path.name}: {error}", file=sys.stderr)
                 skipped_files.append(path.name)
