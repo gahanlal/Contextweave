@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import logging
 
 from isthmus.coverage import aggregate_coverage, coverage_status, semantic_scores
 from isthmus.embeddings import embed_many, normalize_vector
@@ -9,7 +10,16 @@ from isthmus.graph import AdaptiveGraphRetriever, TraversalConfig
 from isthmus.index import InMemoryIndex
 from isthmus.models import Chunk, EvidencePackage, QueryPlan, RetrievalResult, SearchHit
 from isthmus.query import QueryPlanner, planner_from_environment, understand_query
-from isthmus.selection import discover_documents, rerank_documents, score_sectors, select_sectors
+from isthmus.selection import (
+    SectorSelector,
+    discover_documents,
+    rerank_documents,
+    score_sectors,
+    select_sectors,
+)
+from openai import OpenAIError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,10 +43,12 @@ class Isthmus:
         index: InMemoryIndex,
         config: PipelineConfig | None = None,
         query_planner: QueryPlanner | None = None,
+        sector_selector: SectorSelector | None = None,
     ) -> None:
         self.index = index
         self.config = config or PipelineConfig()
         self.query_planner = query_planner if query_planner is not None else planner_from_environment()
+        self.sector_selector = sector_selector
         self._graph_retriever: AdaptiveGraphRetriever | None = None
         self._graph_index_version = -1
 
@@ -75,11 +87,24 @@ class Isthmus:
                 limit=self.config.global_top_k,
             )
         sector_scores = score_sectors(hits)
-        selected_sectors = select_sectors(
+        heuristic_sectors = select_sectors(
             sector_scores,
             threshold=self.config.sector_threshold,
             fallback_margin=self.config.fallback_sector_margin,
         )
+        selected_sectors = heuristic_sectors
+        if self.sector_selector is not None:
+            try:
+                selected_sectors = self.sector_selector.select(
+                    plan.original_query,
+                    sector_scores,
+                    heuristic_sectors,
+                )
+            except (ValueError, OpenAIError) as error:
+                logger.warning(
+                    "Sector selector failed; using similarity-based selection: %s",
+                    type(error).__name__,
+                )
         candidate_documents = discover_documents(
             hits,
             selected_sectors,

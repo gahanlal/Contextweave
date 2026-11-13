@@ -102,3 +102,33 @@ def test_optional_model_planner_uses_configured_model(monkeypatch):
     assert planner is not None
     assert planner.plan("What are the rules?").requirements[0].description == "booking rules"
     assert calls[0]["model"] == "chosen-planner"
+
+
+def test_sector_selector_calls_gpt_4o_mini_with_semantic_scores(monkeypatch):
+    from types import SimpleNamespace
+    import isthmus.query as query_module
+
+    calls = []
+
+    class FakeOpenAI:
+        def __init__(self, **options):
+            calls.append({"client_options": options})
+            self.responses = self
+
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(output_text='{"selected_sectors":["legal"]}')
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(query_module, "OpenAI", FakeOpenAI)
+    selector = query_module.sector_selector_from_environment(enabled=True)
+
+    assert selector.select(
+        "contract terms",
+        {"finance": 0.4, "legal": 0.8},
+        ("legal",),
+    ) == ("legal",)
+    assert calls[0]["client_options"]["api_key"] == "test-key"
+    assert calls[1]["model"] == "gpt-4o-mini"
+    assert calls[1]["text"] == {"format": {"type": "json_object"}}
+    assert '"semantic_score": 0.8' in calls[1]["input"]

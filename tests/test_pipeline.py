@@ -57,6 +57,40 @@ def test_pipeline_embeds_query_once_for_search_and_graph_expansion():
     assert embeddings.calls == 1
 
 
+def test_pipeline_uses_llm_sector_choice_alongside_semantic_scores():
+    index = InMemoryIndex(CountingEmbeddingProvider())
+    index.add_document(
+        Document("finance-doc", "Finance policy", "finance"),
+        [Chunk("finance-chunk", "finance-doc", "finance", "expense policy", 1)],
+    )
+    index.add_document(
+        Document("legal-doc", "Legal policy", "legal"),
+        [Chunk("legal-chunk", "legal-doc", "legal", "contract policy", 1)],
+    )
+    observed = {}
+
+    class Selector:
+        def select(self, query, scores, heuristic_sectors):
+            observed.update(
+                query=query,
+                scores=scores,
+                heuristic_sectors=heuristic_sectors,
+            )
+            return ("legal",)
+
+    result = Isthmus(
+        index,
+        PipelineConfig(sector_threshold=0.0, global_top_k=10),
+        sector_selector=Selector(),
+    ).query("contract policy")
+
+    assert result.selected_sector_ids == ("legal",)
+    assert result.candidate_document_ids == ("legal-doc",)
+    assert observed["query"] == "contract policy"
+    assert set(observed["scores"]) == {"finance", "legal"}
+    assert set(observed["heuristic_sectors"]) == {"finance", "legal"}
+
+
 def test_pipeline_reuses_graph_structure_until_index_changes():
     index = InMemoryIndex(CountingEmbeddingProvider())
     pipeline = Isthmus(index)

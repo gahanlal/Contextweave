@@ -1,6 +1,13 @@
-from isthmus.models import EvidencePackage, QueryPlan, QueryRequirement
-from isthmus.selection import rerank_documents
+import json
+import os
 from dataclasses import replace
+from types import SimpleNamespace
+
+import pytest
+
+from isthmus.models import EvidencePackage, QueryPlan, QueryRequirement
+from isthmus.query import sector_selector_from_environment
+from isthmus.selection import LLMSectorSelector, rerank_documents
 
 
 def package(document_id, score, supported, sections=()):
@@ -29,6 +36,71 @@ def plan(requirement_ids):
         False,
         False,
     )
+
+
+def test_llm_sector_selector_uses_query_scores_and_heuristic_shortlist():
+    prompts = []
+    selector = LLMSectorSelector(lambda prompt: prompts.append(prompt) or '{"selected_sectors":["legal"]}')
+
+    selected = selector.select(
+        "contract termination",
+        {"finance": 0.62, "legal": 0.81},
+        ("legal",),
+    )
+
+    payload = json.loads(prompts[0].split("\n", 1)[1])
+    assert selected == ("legal",)
+    assert payload["query"] == "contract termination"
+    assert payload["sectors"] == [
+        {"id": "finance", "semantic_score": 0.62, "heuristic_selected": False},
+        {"id": "legal", "semantic_score": 0.81, "heuristic_selected": True},
+    ]
+
+
+def test_llm_sector_selector_rejects_unknown_sectors():
+    selector = LLMSectorSelector(lambda _prompt: '{"selected_sectors":["unknown"]}')
+
+    with pytest.raises(ValueError, match="invalid sector IDs"):
+        selector.select("question", {"legal": 0.8}, ("legal",))
+
+
+def test_llm_sector_selector_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("ISTHMUS_LLM_SECTOR_SELECTION", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    assert sector_selector_from_environment() is None
+
+
+@pytest.mark.parametrize(
+    ("setting", "enabled"),
+    [("true", None), ("false", True)],
+)
+def test_llm_sector_selector_can_be_opted_in(monkeypatch, setting, enabled):
+    requests = []
+
+    class Client:
+        def __init__(self, **_kwargs):
+            self.responses = self
+
+        def create(self, **kwargs):
+            requests.append(kwargs)
+            return SimpleNamespace(output_text='{"selected_sectors":["finance"]}')
+
+    monkeypatch.setattr("isthmus.query.OpenAI", Client)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ISTHMUS_LLM_SECTOR_SELECTION", setting)
+    selector = sector_selector_from_environment(enabled=enabled)
+
+    assert selector is not None
+    assert selector.select("travel costs", {"finance": 0.8}, ("finance",)) == ("finance",)
+    assert requests[0]["model"] == "gpt-4o-mini"
+
+
+def test_llm_sector_selector_rejects_invalid_opt_in_value(monkeypatch):
+    monkeypatch.setenv("ISTHMUS_LLM_SECTOR_SELECTION", "sometimes")
+
+    with pytest.raises(RuntimeError, match="must be true or false"):
+        sector_selector_from_environment()
 
 
 def test_complete_single_document_is_sufficient():

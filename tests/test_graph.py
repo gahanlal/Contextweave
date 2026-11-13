@@ -84,6 +84,35 @@ def test_multiple_seeds_are_deduplicated_and_cycles_terminate():
     assert len(evidence.visited_chunk_ids) == 2
 
 
+def test_all_global_hits_seed_expansion_by_default():
+    scores = [(f"seed-{number}", 0.95 - number / 100) for number in range(5)]
+    chunks = [
+        Chunk(chunk_id, "doc", "sector", f"chunk {chunk_id}", number, token_count=1)
+        for number, (chunk_id, _score) in enumerate(scores, start=1)
+    ]
+    retriever = AdaptiveGraphRetriever(
+        chunks,
+        (),
+        similarity=lambda _query, chunk: dict(scores)[chunk.id],
+    )
+    plan = QueryPlan(
+        "question",
+        "factual",
+        (QueryRequirement("main", "question", frozenset({"question"})),),
+        False,
+        False,
+    )
+    hits = tuple(
+        SearchHit(chunk, score, rank)
+        for rank, (chunk, (_chunk_id, score)) in enumerate(zip(chunks, scores), start=1)
+    )
+
+    evidence = retriever.retrieve("doc", plan, hits)
+
+    assert evidence.seed_chunk_ids == tuple(chunk.id for chunk in chunks)
+    assert set(evidence.included_chunk_ids) == {chunk.id for chunk in chunks}
+
+
 def test_traversal_never_crosses_document_boundary():
     chunks = [
         Chunk("seed", "doc", "sector", "seed policy", 1, token_count=1),

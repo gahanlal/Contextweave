@@ -1,13 +1,63 @@
 # Isthmus
 
-Isthmus is an experimental RAG project exploring whether document-local graph
-retrieval can find more complete evidence than conventional top-k search. It
-expands from relevant passages through bounded chunk relationships, then ranks
-documents for complementary evidence and assembles a cited context.
+Isthmus tests whether evidence near a semantically relevant passage can make
+retrieval more complete than returning only the nearest chunks. It searches
+globally, uses the hits as multiple seeds inside candidate documents, and
+expands along bounded previous/next chunk links to find nearby supporting
+evidence. It then groups evidence by document, ranks documents for
+complementary support, and assembles a budgeted context for an optional cited
+answer.
 
 It is a research prototype, not a production-ready service or a proven
 improvement over standard RAG. Retrieval can miss evidence, and citations do
 not guarantee that an answer is correct.
+
+## How retrieval works
+
+```mermaid
+flowchart TD
+    Q[Question] --> P[Query plan<br/>deterministic by default]
+    P --> S[Global semantic search<br/>across all sectors]
+    S --> SS[Score sectors and select<br/>semantic heuristic by default<br/>GPT-4o-mini is opt-in]
+    SS --> D[Discover candidate documents]
+    D --> X[Expand multiple seed chunks<br/>within each document]
+    X --> G[Bounded previous/next traversal<br/>both directions<br/>similarity and evidence checks]
+    G --> E[Evidence package per document]
+    E --> R[Rank documents<br/>for relevance and complementary evidence]
+    R --> C[Assemble context<br/>within the word budget]
+    C --> A{Generate an answer?}
+    A -->|Yes| L[LLM answer generation<br/>citation validation and assessment]
+    A -->|No| O[Return retrieval result]
+    L --> O
+```
+
+Traversal follows sequential links in both directions from each seed. By
+default, a neighboring chunk is included when its query similarity is at least
+`0.62` or it supports a query requirement. Traversal is bounded and may cross
+up to two low-similarity neighbors to avoid breaking a useful local path.
+Exception queries may also follow an explicit `QUALIFIES` relationship when one
+is present.
+
+### Example: one bounded walk per seed
+
+Suppose global search returns `C4`, `C20`, and `C40` from the same document.
+The retriever starts a bounded BFS from every seed and follows only linked
+neighbors that pass its traversal checks:
+
+```text
+C2 <-> C3 <-> C4(seed) <-> C5 <-> C6
+C18 <-> C19 <-> C20(seed) <-> C21 <-> C22
+C38 <-> C39 <-> C40(seed) <-> C41 <-> C42
+```
+
+These are three separate local walks, not a path connecting `C4`, `C20`, and
+`C40`. A seed's nearby chunks can join its walk if they pass similarity or
+requirement checks; walks overlap and deduplicate only if they reach the same
+chunks within the traversal limits. The three seeds can still contribute
+separately to the same document evidence package. An explicit `QUALIFIES` edge
+can add a non-sequential link when present and when the query asks about
+exceptions. All included evidence is then ranked and packed under the context
+budget.
 
 ## Features
 
@@ -52,6 +102,12 @@ configure the answer provider and choose a model in the UI. Provider API calls
 may incur charges; documents and questions are sent to the configured endpoint.
 Never commit API keys.
 
+Sector selection uses semantic scoring by default. To opt into LLM
+sector routing, set `ISTHMUS_LLM_SECTOR_SELECTION=true` and configure
+`OPENAI_API_KEY`. This makes a model request for each query and adds latency and
+provider cost; the current benchmark found no meaningful retrieval gain, so it
+is disabled by default.
+
 For CLI PDF indexing and retrieval:
 
 ```powershell
@@ -64,22 +120,37 @@ authentication; do not expose it publicly.
 
 ## Evaluation
 
-I evaluated retrieval on 77 PDFs from
-[Docugami KG-RAG-datasets](https://github.com/docugami/KG-RAG-datasets), using
-171 eligible SEC questions. On the token-aware MiniLM index, document-reranked
-Isthmus achieved **42.9% precision, 71.2% recall, and 47.9% F1** for
-document-pattern matches. Dense top-k achieved **29.4% precision, 98.2%
-recall, and 39.7% F1**. Thus, Isthmus improved precision in this run but
-missed more labeled source documents.
+The latest retrieval benchmark used a token-aware local MiniLM index over 77
+PDFs from [Docugami KG-RAG-datasets](https://github.com/docugami/KG-RAG-datasets).
+It evaluated 171 eligible SEC questions (195 total). Metrics are
+macro-averaged per-question document-pattern scores: retrieved document
+filenames are matched against the dataset's `Source Docs` filename patterns.
+It measures document retrieval, not passage support or answer correctness.
 
-A separate seven-question passage review found complete evidence for 6/7
-questions with Isthmus and 5/7 with top-k. The questions and evidence judgments
-were not independently reviewed and are too few to estimate general performance.
-No generated-answer quality, citation accuracy, or API cost was measured.
+| Retrieval method | Precision | Recall | F1 | Median latency |
+|---|---:|---:|---:|---:|
+| Dense top-k | 29.3% | **98.2%** | 39.6% | 48.1 ms |
+| Adaptive graph | 41.8% | 81.3% | **49.2%** | 94.6 ms |
+| Heuristic sector routing + graph | 41.8% | 81.3% | **49.2%** | 92.0 ms |
+| Full pipeline, heuristic sector selection | **42.9%** | 71.2% | 47.9% | 126.5 ms |
+| Full pipeline, GPT-4o-mini sector selection | 42.9% | 71.2% | 47.9% | 1,491.3 ms |
 
-The results are experimental: source filename patterns are coarse labels, the
-passage review is small, and single-run latency is not a production benchmark.
-They do not prove that Isthmus is better than conventional RAG.
+Document-pattern F1 is the harmonic mean of document-set precision and recall
+for each question, then macro-averaged across the 171 eligible questions. The
+LLM selector made 171 successful calls but did not meaningfully improve these
+retrieval scores; it added about 1.36 seconds to median latency. Accordingly,
+LLM sector selection is opt-in, not the default.
+
+### Separate seven-question passage review
+
+A small manual review on the token-aware index found complete retrieved
+evidence for **6/7** questions with the full pipeline and **5/7** with top-k.
+This passage-level check is separate from the document-pattern KPI table: the
+questions and judgments were assistant-authored, not independently reviewed,
+and are too few to estimate general performance. The benchmark has no gold
+answers or claim-level citation labels, so it does not measure answer
+correctness or citation accuracy. Latencies are single-run measurements, not
+production benchmarks.
 
 See the [full benchmark and methodology](docs/docugami-evaluation.md), the
 [passage review](docs/docugami-passage-review.md), and

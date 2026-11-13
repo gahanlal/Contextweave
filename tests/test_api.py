@@ -7,6 +7,7 @@ from conftest import FakeEmbeddingProvider
 def test_document_and_query_workflow(tmp_path, monkeypatch):
     monkeypatch.setenv("ISTHMUS_EMBEDDING_MODEL", "test")
     monkeypatch.setattr("isthmus.api.OpenAIEmbeddingProvider", lambda **kwargs: FakeEmbeddingProvider())
+    monkeypatch.setattr("isthmus.api.sector_selector_from_environment", lambda: None)
     monkeypatch.setenv("ISTHMUS_DATABASE", str(tmp_path / "test.db"))
     client = TestClient(app)
     assert client.post("/sectors", json={"name": "Finance"}).status_code == 201

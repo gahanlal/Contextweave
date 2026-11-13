@@ -20,6 +20,7 @@ from isthmus.embeddings import OpenAIEmbeddingProvider
 from isthmus.generation import answer_provider, generate_answer
 from isthmus.index import BackendIndex
 from isthmus.pipeline import Isthmus
+from isthmus.query import sector_selector_from_environment
 
 load_dotenv()
 app = FastAPI(title="Isthmus")
@@ -103,7 +104,10 @@ def query(request: QueryRequest) -> dict:
         with _index() as index:
             if not index.chunks:
                 raise HTTPException(status_code=400, detail="Index at least one document.")
-            result = Isthmus(index).query(request.question)
+            result = Isthmus(
+                index,
+                sector_selector=sector_selector_from_environment(),
+            ).query(request.question)
             answer = (
                 generate_answer(result, index.documents, answer_provider(
                     request.answer_protocol, request.answer_model, request.answer_base_url

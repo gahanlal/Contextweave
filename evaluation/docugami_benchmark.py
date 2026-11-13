@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
+from openai import OpenAIError
 from pypdf.errors import PyPdfError
 from tokenizers import Tokenizer
 
@@ -19,7 +20,8 @@ from isthmus.evaluation.baselines import run_baselines
 from isthmus.index import SQLiteIndex
 from isthmus.ingestion import NoExtractableTextError, parse_pdf
 from isthmus.pipeline import Isthmus, PipelineConfig
-from isthmus.query import understand_query
+from isthmus.query import sector_selector_from_environment, understand_query
+from isthmus.selection import SectorSelector
 
 
 SECTORS = (
@@ -67,6 +69,28 @@ class DeterministicPlanner:
         return understand_query(query)
 
 
+class MeasuredSectorSelector:
+    def __init__(self, selector: SectorSelector) -> None:
+        self.selector = selector
+        self.requests = 0
+        self.failures = 0
+
+    def select(
+        self,
+        query: str,
+        scores: dict[str, float],
+        heuristic_sectors: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        if not scores:
+            return ()
+        self.requests += 1
+        try:
+            return self.selector.select(query, scores, heuristic_sectors)
+        except (OpenAIError, ValueError):
+            self.failures += 1
+            raise
+
+
 def budget_chunks(chunks, budget):
     selected = []
     used = 0
@@ -100,6 +124,11 @@ def main() -> None:
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--comparators", action="store_true", help="Include hybrid, cross-encoder and page-merge baselines.")
     parser.add_argument("--legacy-chunking", action="store_true", help="Use the original word-only benchmark chunking.")
+    parser.add_argument(
+        "--llm-sector-selection",
+        action="store_true",
+        help="Use the live GPT-4o-mini sector selector for the full-pipeline baseline.",
+    )
     args = parser.parse_args()
     root = args.data_dir.resolve()
     files = {
@@ -158,7 +187,18 @@ def main() -> None:
             Path(item["path"]).name: item["document_id"]
             for item in indexed if item["sector"] == "sec-10-q"
         }
-        pipeline = Isthmus(index, config, query_planner=DeterministicPlanner())
+        selector = None
+        if args.llm_sector_selection:
+            live_selector = sector_selector_from_environment(enabled=True)
+            if live_selector is None:
+                raise RuntimeError("Explicit LLM sector selection did not create a selector.")
+            selector = MeasuredSectorSelector(live_selector)
+        pipeline = Isthmus(
+            index,
+            config,
+            query_planner=DeterministicPlanner(),
+            sector_selector=selector,
+        )
         if args.comparators:
             from docugami_comparators import CrossEncoder, HybridSearch, PageMerger, run_comparators
 
@@ -214,6 +254,19 @@ def main() -> None:
             "dataset_commit": "547f132d3c2bcc2b9976ca1d8413b99d8ba45aa1",
             "embedding_model": provider.provider_id,
             "embedding_max_tokens": 256,
+            "sector_selection": (
+                "gpt-4o-mini" if args.llm_sector_selection else "deterministic"
+            ),
+            "sector_selection_requests": (
+                pipeline.sector_selector.requests
+                if isinstance(pipeline.sector_selector, MeasuredSectorSelector)
+                else 0
+            ),
+            "sector_selection_failures": (
+                pipeline.sector_selector.failures
+                if isinstance(pipeline.sector_selector, MeasuredSectorSelector)
+                else 0
+            ),
             "total_seconds": time.perf_counter() - started,
             "total_chunks": len(index.chunks),
             "indexed_files": indexed,
@@ -225,7 +278,14 @@ def main() -> None:
         }
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(json.dumps({"summary": summary, "failed_files": failed, "excluded_cases": len(excluded)}, indent=2))
+    print(json.dumps({
+        "summary": summary,
+        "failed_files": failed,
+        "excluded_cases": len(excluded),
+        "sector_selection": report["sector_selection"],
+        "sector_selection_requests": report["sector_selection_requests"],
+        "sector_selection_failures": report["sector_selection_failures"],
+    }, indent=2))
 
 
 if __name__ == "__main__":

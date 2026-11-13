@@ -13,6 +13,7 @@ from isthmus.embeddings import OpenAIEmbeddingProvider
 from isthmus.generation import answer_provider, generate_answer
 from isthmus.ingestion import NoExtractableTextError, parse_pdf
 from isthmus.pipeline import Isthmus
+from isthmus.query import sector_selector_from_environment
 
 
 def _sector_argument(value: str) -> str:
@@ -133,7 +134,10 @@ def _query(
     with open_index(provider, database_path) as index:
         if not index.chunks:
             raise RuntimeError(f"No chunks are indexed in {database_path}")
-        result = Isthmus(index).query(question)
+        result = Isthmus(
+            index,
+            sector_selector=sector_selector_from_environment(),
+        ).query(question)
         generated = (
             generate_answer(result, index.documents, answer_provider(answer_protocol, answer_model, answer_base_url))
             if answer else None

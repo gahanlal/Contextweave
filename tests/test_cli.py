@@ -19,6 +19,7 @@ def test_query_cli_can_generate_answer(tmp_path, monkeypatch, capsys):
             [Chunk("chunk", "doc", "Finance", "Approved travel is reimbursed.", 1)],
         )
     monkeypatch.setattr(cli, "OpenAIEmbeddingProvider", lambda **kwargs: provider)
+    monkeypatch.setattr(cli, "sector_selector_from_environment", lambda: None)
     monkeypatch.setattr(
         cli,
         "answer_provider",
@@ -27,7 +28,14 @@ def test_query_cli_can_generate_answer(tmp_path, monkeypatch, capsys):
             "assess": lambda self, prompt: '{"supported":true}',
         })(),
     )
-    monkeypatch.setattr(sys, "argv", ["isthmus", "query", "travel", "--database", str(database), "--model", "embed", "--answer", "--answer-model", "answer"])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "isthmus", "query", "travel", "--database", str(database),
+            "--model", "embed", "--answer", "--answer-model", "answer",
+        ],
+    )
 
     cli.main()
 

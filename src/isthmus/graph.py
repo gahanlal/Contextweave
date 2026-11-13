@@ -18,7 +18,7 @@ from isthmus.coverage import SUFFICIENT, aggregate_coverage, requirement_score
 
 @dataclass(frozen=True, slots=True)
 class TraversalConfig:
-    max_seeds_per_document: int = 3
+    max_seeds_per_document: int | None = None
     max_nodes: int = 40
     max_depth: int = 6
     max_low_similarity_bridges: int = 2
@@ -79,7 +79,10 @@ class AdaptiveGraphRetriever:
             if (
                 chunk_id in document_chunks
                 and chunk_id not in seen_seeds
-                and len(seeds) < self.config.max_seeds_per_document
+                and (
+                    self.config.max_seeds_per_document is None
+                    or len(seeds) < self.config.max_seeds_per_document
+                )
             ):
                 seeds.append(chunk_id)
                 seen_seeds.add(chunk_id)

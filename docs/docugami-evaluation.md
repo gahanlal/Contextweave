@@ -94,28 +94,47 @@ limit. The new index has the same 77 PDFs and 171 eligible SEC questions, but
 9,456 chunks. Directly counting every indexed chunk with the untruncated
 tokenizer found a maximum of 256 tokens and **zero over the limit**.
 
-The following are new macro document-pattern scores, with the original scores
-in parentheses for comparison. Both chunking and selection changed, so the
-differences cannot be attributed to either change alone.
+The following are macro document-pattern scores from the latest local rerun
+(November 14, 2026), over the same 171 eligible questions. The first run used
+the token-aware index and included all local comparators. A separate A/B run
+changed only the full pipeline's sector selector to the revised GPT-4o-mini
+prompt; it kept the query planner deterministic. That run completed 171 selector
+requests with zero fallbacks.
 
-| Retrieval method | Precision | Recall | F1 | Mean words | Median ms |
+| Retrieval method | Precision | Recall | F1 | Mean context words | Median latency ms |
 |---|---:|---:|---:|---:|---:|
-| Dense top-k | 29.4 (32.5) | 98.2 (96.2) | 39.7 (43.0) | 4,148 (4,445) | 47.1 (38.2) |
-| Dense + fixed window | 35.7 (37.3) | 93.7 (90.2) | 46.1 (47.3) | 4,492 (4,490) | 57.1 (42.0) |
-| Adaptive graph | 42.4 (41.5) | 82.9 (82.0) | 50.1 (49.0) | 4,486 (4,481) | 89.3 (76.0) |
-| Sector routing + graph | 42.4 (41.5) | 82.9 (82.0) | 50.1 (49.0) | 4,486 (4,481) | 90.4 (74.5) |
-| Isthmus document reranking | 42.9 (44.2) | 71.2 (63.3) | 47.9 (46.3) | 4,452 (3,917) | 127.8 (101.7) |
+| Dense top-k | 29.3 | 98.2 | 39.6 | 4,149 | 48.1 |
+| Dense + fixed window | 35.6 | 93.7 | 46.0 | 4,492 | 57.3 |
+| Adaptive graph | 41.8 | 81.3 | **49.2** | 4,486 | 94.6 |
+| Heuristic sector routing + graph | 41.8 | 81.3 | **49.2** | 4,486 | 92.0 |
+| Isthmus document reranking (heuristic sectors) | 42.9 | 71.2 | 47.9 | 4,469 | 126.5 |
+| Isthmus document reranking (GPT-4o-mini sectors) | 42.9 | 71.2 | 47.9 | 4,467 | 1,491.3 |
+| Hybrid BM25 + vector | 19.7 | 98.8 | 30.0 | 4,202 | 54.4 |
+| Hybrid + cross-encoder | 32.9 | 90.5 | 42.7 | 1,460 | 2,022.3 |
+| Page auto-merge | 30.3 | 98.2 | 40.7 | 4,246 | 45.0 |
 
-The full pipeline's pattern recall increased but remained below dense top-k;
-its precision decreased and its context grew. Latencies are single-machine
-measurements, not controlled production benchmarks. Hybrid, cross-encoder and
-page-merging comparators were **not rerun** on the new index; their historical
-figures above should not be treated as new results.
+The LLM sector selector changed document-pattern F1 by only **+0.01 percentage
+points** versus heuristic selection, while adding **1,364.8 ms** to median
+retrieval latency. This run provides no evidence that the LLM selector improves
+these retrieval KPIs. Adaptive graph had the best F1; dense top-k had the best
+recall. The full pipeline's lower recall reflects its more selective document
+set.
+
+Precision, recall, and F1 here score retrieved document filenames against
+upstream `Source Docs` filename patterns. These labels are coarse and do not
+measure passage entailment or answer correctness. Context length is the mean
+number of whitespace-delimited words selected under the 4,500-word budget.
+Latencies are single-machine, single-run measurements; the GPT-4o-mini number
+includes the live sector-selection API call. They are not controlled production
+latency estimates.
 
 For a complementary content-level check, see the
 [assistant-authored passage review](docugami-passage-review.md). Further work
 still requires independently reviewed passage labels, answer/citation review,
-a representative corpus and repeated end-to-end measurements.
+a representative corpus and repeated end-to-end measurements. The labeled
+benchmark has no reference answers or claim-level citation labels, so it does
+not produce an answer-quality KPI; the live selector run also did not generate
+answers.
 
 ## Reproduce
 
@@ -142,6 +161,12 @@ excluded question and every baseline's per-question results. This benchmark
 uses an optional local model adapter only for evaluation; it does not change the
 application's selected embedding provider. The command uses the current
 selection policy, so it does not exactly reproduce the historical scores.
+
+To evaluate the production LLM sector selector on the full-pipeline baseline,
+add `--llm-sector-selection`. This makes one GPT-4o-mini routing request for
+each eligible question; it requires `OPENAI_API_KEY` and incurs provider cost.
+The query planner remains deterministic so the comparison isolates sector
+selection. The report records whether selection was deterministic or LLM-based.
 
 For the newer five-method comparison, omit `--legacy-chunking` and
 `--comparators` and use a **different** database and report path, for example

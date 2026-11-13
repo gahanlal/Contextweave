@@ -23,6 +23,7 @@ from isthmus.generation import answer_provider, generate_answer
 from isthmus.index import BackendIndex
 from isthmus.ingestion import NoExtractableTextError
 from isthmus.pipeline import Isthmus
+from isthmus.query import sector_selector_from_environment
 
 
 def main() -> None:
@@ -191,7 +192,10 @@ def _retrieval_page(index: BackendIndex) -> None:
             try:
                 st.session_state.pop("retrieval_result", None)
                 st.session_state.pop("generated_answer", None)
-                result = Isthmus(index).query(query)
+                result = Isthmus(
+                    index,
+                    sector_selector=sector_selector_from_environment(),
+                ).query(query)
                 st.session_state["retrieval_result"] = result
                 st.session_state.pop("generated_answer", None)
                 if generate:
