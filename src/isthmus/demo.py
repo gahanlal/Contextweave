@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 
-from isthmus.embeddings import HashingEmbeddingProvider
+from dotenv import load_dotenv
+
+from isthmus.embeddings import EmbeddingProvider, OpenAIEmbeddingProvider
 from isthmus.index import InMemoryIndex
 from isthmus.models import Chunk, Document, Relationship, RelationshipType
 from isthmus.pipeline import Isthmus, PipelineConfig
 
 
-def build_demo() -> Isthmus:
-    embeddings = HashingEmbeddingProvider()
+def build_demo(embeddings: EmbeddingProvider) -> Isthmus:
     index = InMemoryIndex(embeddings)
     document = Document("policy-001", "Travel Reimbursement Policy", "Finance")
     contents = [
@@ -50,7 +52,14 @@ def build_demo() -> Isthmus:
 
 
 def main() -> None:
-    result = build_demo().query(
+    load_dotenv()
+    model = os.getenv("ISTHMUS_EMBEDDING_MODEL", "")
+    dimensions = os.getenv("ISTHMUS_EMBEDDING_DIMENSIONS", "")
+    provider = OpenAIEmbeddingProvider(
+        model, int(dimensions) if dimensions else None,
+        base_url=os.getenv("ISTHMUS_EMBEDDING_BASE_URL") or None,
+    )
+    result = build_demo(provider).query(
         "What are the travel reimbursement rules and what exceptions apply?"
     )
     print(json.dumps({

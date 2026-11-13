@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import math
-import re
+import os
 from collections.abc import Sequence
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from openai import OpenAI
 
@@ -14,55 +15,33 @@ class EmbeddingProvider(Protocol):
         """Return a normalized vector for text."""
 
 
-class HashingEmbeddingProvider:
-    """A deterministic, dependency-free lexical vectorizer for local experiments.
-
-    Replace this provider with a semantic embedding implementation for production
-    experiments. This baseline does not claim semantic understanding.
-    """
-
-    def __init__(self, dimensions: int = 512) -> None:
-        if dimensions < 16:
-            raise ValueError("dimensions must be at least 16")
-        self.dimensions = dimensions
-        self.provider_id = f"hashing-v1:{dimensions}"
-
-    def embed(self, text: str) -> tuple[float, ...]:
-        words = re.findall(r"[a-z0-9]+", text.lower())
-        vector = [0.0] * self.dimensions
-        for feature in words:
-            _accumulate_feature(vector, feature)
-        for left, right in zip(words, words[1:]):
-            _accumulate_feature(vector, f"{left}_{right}")
-        return normalize_vector(vector)
-
-
-def _accumulate_feature(vector: list[float], feature: str) -> None:
-    digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
-    index = int.from_bytes(digest[:4], "big") % len(vector)
-    sign = 1.0 if digest[4] & 1 else -1.0
-    vector[index] += sign
-
-
 class OpenAIEmbeddingProvider:
     def __init__(
         self,
-        model: str = "text-embedding-3-small",
-        dimensions: int | None = 512,
+        model: str,
+        dimensions: int | None = None,
         api_key: str | None = None,
+        base_url: str | None = None,
     ) -> None:
+        if not model.strip():
+            raise ValueError("Specify an embedding model ID.")
+        if dimensions is not None and dimensions < 1:
+            raise ValueError("Embedding dimensions must be positive.")
+        if base_url:
+            parsed = urlsplit(base_url)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise ValueError("Embedding endpoint must be an HTTP(S) URL without credentials or query parameters.")
         if api_key is None:
-            import os
-
-            api_key = os.environ.get("OPENAI_API_KEY")
+            api_key = os.environ.get("ISTHMUS_EMBEDDING_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError(
-                "Set OPENAI_API_KEY in the environment or your local .env file."
+                "Set ISTHMUS_EMBEDDING_API_KEY or OPENAI_API_KEY in the environment or .env file."
             )
-        self.model = model
+        self.model = model.strip()
         self.dimensions = dimensions
-        self.provider_id = f"openai:{model}:{dimensions or 'default'}"
-        self.client = OpenAI(api_key=api_key)
+        endpoint = f":{hashlib.sha256(base_url.encode()).hexdigest()[:16]}" if base_url else ""
+        self.provider_id = f"openai:{self.model}:{dimensions or 'default'}{endpoint}"
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
 
     def embed(self, text: str) -> tuple[float, ...]:
         return self.embed_many([text])[0]
@@ -70,11 +49,10 @@ class OpenAIEmbeddingProvider:
     def embed_many(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
         if not texts:
             return ()
-        response = self.client.embeddings.create(
-            input=list(texts),
-            model=self.model,
-            dimensions=self.dimensions,
-        )
+        kwargs = {"input": list(texts), "model": self.model}
+        if self.dimensions is not None:
+            kwargs["dimensions"] = self.dimensions
+        response = self.client.embeddings.create(**kwargs)
         vectors: list[tuple[float, ...] | None] = [None] * len(texts)
         for item in response.data:
             if item.index < 0 or item.index >= len(vectors) or vectors[item.index] is not None:

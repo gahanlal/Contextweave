@@ -1,0 +1,3 @@
+Employees must not include passwords or authentication codes in expense reports.
+
+Expense reports containing personal information must be sent through the approved expense portal.

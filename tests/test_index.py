@@ -109,6 +109,23 @@ def test_sqlite_rejects_a_different_embedding_provider(tmp_path):
         raise AssertionError("an incompatible embedding provider must be rejected")
 
 
+def test_empty_index_can_switch_embedding_provider(tmp_path):
+    class OtherEmbeddingProvider:
+        def embed(self, _text):
+            return (0.0, 1.0)
+
+    database_path = tmp_path / "empty.db"
+    with SQLiteIndex(FixedEmbeddingProvider(), database_path):
+        pass
+    with SQLiteIndex(OtherEmbeddingProvider(), database_path) as index:
+        index.add_document(
+            Document("doc", "Document", "sector"),
+            [Chunk("chunk", "doc", "sector", "content", 1)],
+        )
+    with SQLiteIndex(OtherEmbeddingProvider(), database_path) as index:
+        assert "chunk" in index.chunks
+
+
 def test_reindex_rolls_back_document_if_relationship_storage_fails(tmp_path):
     database_path = tmp_path / "isthmus.db"
     document = Document("doc", "Document", "sector")

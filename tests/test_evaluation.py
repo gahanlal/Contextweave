@@ -6,6 +6,7 @@ import pytest
 from isthmus.evaluation.dataset import load_dataset_stream
 from isthmus.evaluation.runner import evaluate_dataset
 from isthmus.evaluation.sample import build_sample_evaluation
+from conftest import FakeEmbeddingProvider
 
 
 def test_dataset_loader_parses_evidence_and_requirement_labels():
@@ -32,7 +33,7 @@ def test_dataset_loader_parses_evidence_and_requirement_labels():
 
 
 def test_evaluation_runs_all_five_retrieval_baselines():
-    index, cases = build_sample_evaluation()
+    index, cases = build_sample_evaluation(FakeEmbeddingProvider())
 
     report = evaluate_dataset(index, cases)
 
@@ -64,7 +65,7 @@ def test_dataset_loader_rejects_missing_gold_evidence():
 
 
 def test_evaluation_rejects_labels_not_in_index():
-    index, cases = build_sample_evaluation()
+    index, cases = build_sample_evaluation(FakeEmbeddingProvider())
     from dataclasses import replace
 
     invalid_case = replace(cases[0], evidence_chunk_ids=frozenset({"missing"}))

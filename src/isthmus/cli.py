@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+from isthmus.backends import open_index
 from isthmus.embeddings import OpenAIEmbeddingProvider
-from isthmus.generation import OpenAIAnswerProvider, generate_answer
-from isthmus.index import SQLiteIndex
+from isthmus.generation import answer_provider, generate_answer
 from isthmus.ingestion import NoExtractableTextError, parse_pdf
 from isthmus.pipeline import Isthmus
 
@@ -24,7 +25,9 @@ def main() -> None:
     )
     index_parser.add_argument("--pdf-dir", type=Path, default=Path("testfiles"))
     index_parser.add_argument("--database", type=Path, default=Path("isthmus.db"))
-    index_parser.add_argument("--model", default="text-embedding-3-small")
+    index_parser.add_argument("--model")
+    index_parser.add_argument("--dimensions", type=int)
+    index_parser.add_argument("--embedding-base-url")
 
     query_parser = commands.add_parser(
         "query",
@@ -32,17 +35,40 @@ def main() -> None:
     )
     query_parser.add_argument("question", nargs="+")
     query_parser.add_argument("--database", type=Path, default=Path("isthmus.db"))
-    query_parser.add_argument("--model", default="text-embedding-3-small")
-    query_parser.add_argument("--answer", action="store_true", help="Generate a cited answer using OpenAI.")
+    query_parser.add_argument("--model")
+    query_parser.add_argument("--dimensions", type=int)
+    query_parser.add_argument("--embedding-base-url")
+    query_parser.add_argument("--answer", action="store_true", help="Generate a cited answer.")
+    query_parser.add_argument("--answer-protocol", choices=("openai", "anthropic"), default="openai")
+    query_parser.add_argument("--answer-model")
+    query_parser.add_argument("--answer-base-url")
 
     args = parser.parse_args()
     load_dotenv()
-    provider = OpenAIEmbeddingProvider(model=args.model)
+    model = args.model or os.getenv("ISTHMUS_EMBEDDING_MODEL", "")
+    raw_dimensions = os.getenv("ISTHMUS_EMBEDDING_DIMENSIONS", "")
+    try:
+        dimensions = args.dimensions if args.dimensions is not None else (int(raw_dimensions) if raw_dimensions else None)
+    except ValueError:
+        parser.error("ISTHMUS_EMBEDDING_DIMENSIONS must be an integer")
+    if not model.strip():
+        parser.error("Set ISTHMUS_EMBEDDING_MODEL or pass --model")
+    if args.command == "query" and args.answer and not (args.answer_model or os.getenv("ISTHMUS_ANSWER_MODEL")):
+        parser.error("Set ISTHMUS_ANSWER_MODEL or pass --answer-model when using --answer")
+    provider = OpenAIEmbeddingProvider(
+        model=model,
+        dimensions=dimensions,
+        base_url=args.embedding_base_url or os.getenv("ISTHMUS_EMBEDDING_BASE_URL") or None,
+    )
 
     if args.command == "index-pdfs":
         _index_pdfs(args.pdf_dir, args.database, provider)
     else:
-        _query(" ".join(args.question), args.database, provider, args.answer)
+        _query(
+            " ".join(args.question), args.database, provider, args.answer,
+            args.answer_protocol, args.answer_model or os.getenv("ISTHMUS_ANSWER_MODEL", ""),
+            args.answer_base_url or os.getenv("ISTHMUS_ANSWER_BASE_URL") or None,
+        )
 
 
 def _index_pdfs(
@@ -59,7 +85,7 @@ def _index_pdfs(
     indexed_documents = 0
     indexed_chunks = 0
     skipped_files: list[str] = []
-    with SQLiteIndex(provider, database_path) as index:
+    with open_index(provider, database_path) as index:
         for path in pdf_paths:
             try:
                 document, chunks, relationships = parse_pdf(path)
@@ -90,13 +116,16 @@ def _query(
     database_path: Path,
     provider: OpenAIEmbeddingProvider,
     answer: bool = False,
+    answer_protocol: str = "openai",
+    answer_model: str = "",
+    answer_base_url: str | None = None,
 ) -> None:
-    with SQLiteIndex(provider, database_path) as index:
+    with open_index(provider, database_path) as index:
         if not index.chunks:
             raise RuntimeError(f"No chunks are indexed in {database_path}")
         result = Isthmus(index).query(question)
         generated = (
-            generate_answer(result, index.documents, OpenAIAnswerProvider())
+            generate_answer(result, index.documents, answer_provider(answer_protocol, answer_model, answer_base_url))
             if answer else None
         )
         print(

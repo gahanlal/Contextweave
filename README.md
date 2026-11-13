@@ -28,17 +28,49 @@ The initial implementation focuses on the retrieval mechanism:
 5. After every candidate has an evidence package, document-level reranking selects complementary evidence.
 6. Context assembly preserves source locations and enforces a global token budget.
 
-The retrieval core uses SQLite for durable documents and graph relationships and an in-memory ChromaDB collection for vector search. The default embedding model is `text-embedding-3-small`; OpenAI API usage may incur charges. `HashingEmbeddingProvider` remains available for deterministic offline tests and demos, but is not a semantic embedding model.
+The retrieval core uses SQLite for durable documents and graph relationships and an in-memory ChromaDB collection for vector search. Choose an embedding model offered by an OpenAI-compatible embeddings API. Answer generation supports OpenAI-compatible chat APIs and Anthropic's Messages API. Models are not selected by default; API calls may incur charges.
+
+### Why SQLite and ChromaDB?
+
+They were chosen for convenience during the proof of concept: SQLite needs no separate database server, and an in-memory ChromaDB collection makes it straightforward to try vector search without setting up PostgreSQL and pgvector. This is a setup choice, not a claim that either is the best production option. ChromaDB's collection is rebuilt from the stored SQLite vectors.
+
+### Bring your own database
+
+SQLite remains the default. To integrate another database, such as PostgreSQL, implement a subclass of `isthmus.index.BackendIndex` and a factory `create_index(embedding_provider, database)` returning it. Make the module importable and set `ISTHMUS_INDEX_FACTORY=your_module:create_index` in `.env`; the UI, CLI, API, and evaluation runner all use this factory. The factory can obtain connection credentials from its own environment variables rather than putting secrets in the UI or command line.
+
+The backend must provide the document, chunk, sector, relationship and version state used by retrieval; implement sector and document lifecycle methods, context-manager cleanup and vector search, and increment `version` after index changes. It must preserve embedding-provider identity, chunk IDs, provenance, and document-local relationships. See the built-in `SQLiteIndex` and `tests/test_backends.py` for the expected interface. The extension point executes trusted local Python code; do not load untrusted factories.
+
+PostgreSQL and pgvector themselves are **not included**: a developer must implement and test the adapter, schema, connection handling, and vector search for their chosen database. The small factory mechanism does not automatically convert an existing SQLite index.
 
 ## Run locally
 
-```bash
-python -m pip install -e ".[dev]"
-pytest
-isthmus-demo
+Isthmus is not deployed as a hosted service. Clone this repository and run it on your own machine; the default SQLite and ChromaDB setup does not require a separate database server. You will need access to the model APIs you choose.
+
+Use Python 3.11 or newer. On Windows, replace `python` below with `py -3.14` if `python` points to an older installation.
+
+```powershell
+git clone https://github.com/gahanlal/isthmus-rag.git
+cd isthmus-rag
+py -3.14 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+python -m pytest
+python -m streamlit run frontend\streamlit_app.py
 ```
 
-Set `OPENAI_API_KEY` in the environment or a local, ignored `.env` file to use online embeddings. Indexing sends extracted PDF text to OpenAI, and API usage may incur charges. The key is read locally and must not be committed.
+In `.env`, set `ISTHMUS_EMBEDDING_MODEL` and `ISTHMUS_EMBEDDING_API_KEY` to your chosen model ID and provider key. For an OpenAI-compatible provider other than the default endpoint, set `ISTHMUS_EMBEDDING_BASE_URL`; set `ISTHMUS_EMBEDDING_DIMENSIONS` only if your model and existing index require it. The optional `OPENAI_API_KEY` is also accepted. Use separate databases for different model, dimension, or endpoint combinations. Do not commit keys.
+
+For answers, select the API protocol and enter a model ID in the UI. Set `ISTHMUS_ANSWER_API_KEY` (or the provider's `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) and optionally `ISTHMUS_ANSWER_BASE_URL`. Custom endpoints must implement the selected API protocol; arbitrary APIs are not automatically compatible. Anthropic's Messages API is for answers, not embeddings. Documents, questions, and evidence are sent to the configured providers.
+
+### Try the included sample
+
+1. In Streamlit, enter the embedding model and endpoint and create a sector.
+2. Upload both files from `sample_data/` (the two `.txt` files) and index them in that sector.
+3. Use the query tab to inspect retrieval and, optionally, generate an answer.
+4. In the evaluation tab, upload `sample_data/evaluation.jsonl` and run the five baselines.
+
+The sample is fictional and included for redistribution. Its four labels are illustrative, not independently reviewed or sufficient to establish benchmark quality. Keep the filenames and default chunking so their IDs match the labels. To try the older synthetic command-line demo, run `isthmus-demo`; it uses your configured embedding provider and incurs any applicable API charges.
 
 The example PDFs and the local database are not distributed with this repository. Add PDFs you have permission to use to `testfiles/`, then index them into `isthmus.db` and run a retrieval query:
 
@@ -47,9 +79,9 @@ python -m isthmus.cli index-pdfs
 python -m isthmus.cli query "What cybercrime laws and exceptions apply?"
 ```
 
-Existing installations can keep using their previous database file: pass its path with `--database`, enter it in the Streamlit sidebar, or set `ISTHMUS_DATABASE` for the HTTP API. The new default does not automatically move or overwrite existing data. The API configuration variables are now `ISTHMUS_DATABASE` and `ISTHMUS_EMBEDDINGS`.
+Existing installations can keep using their previous database file: pass its path with `--database`, enter it in the Streamlit sidebar, or set `ISTHMUS_DATABASE` for the HTTP API. Select the same embedding model and dimensions used when it was indexed. A provider mismatch is rejected rather than mixing incompatible vectors; create a separate database to change models. Existing databases and settings are not automatically moved or overwritten.
 
-The index command reports PDFs without extractable text; OCR is not implemented. The query command prints retrieved evidence and provenance. Add `--answer` to generate a cited answer with OpenAI `gpt-4o-mini`; this incurs API charges. The separate demo still prints an inspectable trace for a small synthetic policy. Neither is a quality evaluation, and no claim is made that Isthmus outperforms conventional retrieval.
+The index command reports PDFs without extractable text; OCR is not implemented. The query command prints retrieved evidence and provenance. Add `--answer --answer-protocol <openai|anthropic> --answer-model <model-id>` to generate an answer. Neither the demo nor a single query is a quality evaluation, and no claim is made that Isthmus outperforms conventional retrieval.
 
 ## Streamlit interface
 
@@ -60,13 +92,13 @@ python -m pip install -e ".[dev,ui]"
 streamlit run frontend/streamlit_app.py
 ```
 
-The UI supports sector creation, PDF, DOCX, PPTX, XLSX, TXT, and Markdown upload/re-index/removal, retrieval, optional `gpt-4o-mini` answers, evidence inspection, traversal visualization, and JSONL evaluation datasets. Select the local hashing provider for offline retrieval; it is a lexical baseline, not a semantic model. Answer generation still requires OpenAI API access, even when using hashing. PDF extraction depends on extractable text; OCR is not provided. Office document page layout is not inferred, so DOCX citations identify document blocks rather than pages. Spreadsheet rows retain cell coordinates and slide citations retain slide numbers.
+The UI supports sector creation, PDF, DOCX, PPTX, XLSX, TXT, and Markdown upload/re-index/removal, retrieval, optional answers, evidence inspection, traversal visualization, and JSONL evaluation datasets. PDF extraction depends on extractable text; OCR is not provided. Office document page layout is not inferred, so DOCX citations identify document blocks rather than pages. Spreadsheet rows retain cell coordinates and slide citations retain slide numbers.
 
 Generated citations use identifiers assigned to retrieved evidence and are checked against the assembled context. This verifies that source identifiers exist, not that every claim is supported; users should check cited evidence.
 
 ## HTTP API
 
-Run `uvicorn isthmus.api:app` and visit its `/docs` endpoint for document upload, sector creation, deletion, and retrieval. Set `ISTHMUS_DATABASE` to select the SQLite file and `ISTHMUS_EMBEDDINGS` to `openai` (default) or `hashing`. The API is intended for local use and has no authentication; do not expose it publicly.
+Run `python -m uvicorn isthmus.api:app` and visit its `/docs` endpoint for document upload, sector creation, deletion, and retrieval. Set `ISTHMUS_DATABASE` to select the SQLite file and configure the embedding environment variables above. For generated answers, include `answer_protocol`, `answer_model`, and optionally `answer_base_url` in the query request. The API is intended for local use and has no authentication; do not expose it publicly.
 
 ## Retrieval evaluation
 
@@ -85,7 +117,7 @@ For corpus evaluation, provide JSONL with one manually labeled case per line:
 Then run:
 
 ```bash
-python -m isthmus.evaluation.cli --database isthmus.db --dataset evaluation.jsonl --provider hashing
+python -m isthmus.evaluation.cli --database isthmus.db --dataset evaluation.jsonl
 ```
 
 The runner compares top-k, fixed-window, adaptive graph, sector-routed graph, and document-reranked retrieval. It reports evidence/exception recall, requirement coverage, document selection precision/recall/F1, chunk/token counts, and retrieval latency. Answer correctness and citation correctness are not yet measured. The three-query demo is only a smoke test; credible comparisons still require a larger manually labeled corpus.
@@ -93,10 +125,10 @@ The runner compares top-k, fixed-window, adaptive graph, sector-routed graph, an
 `evaluation/pdf-draft.jsonl` contains nine draft cases derived from a local PDF collection that is not included in the repository. These labels were prepared by the assistant, not independently human-reviewed; they are illustrative, not a representative benchmark. They only work with the same documents, filenames and chunk boundaries; otherwise, create labels for your own index. Review the labels and expand the corpus before using the results as evidence of retrieval quality. With the matching collection indexed, run:
 
 ```bash
-python -m isthmus.evaluation.cli --database isthmus.db --dataset evaluation/pdf-draft.jsonl --provider openai
+python -m isthmus.evaluation.cli --database isthmus.db --dataset evaluation/pdf-draft.jsonl
 ```
 
-This sends the questions to OpenAI for embeddings and may incur charges.
+This sends the questions to the configured embedding provider and may incur charges.
 
 ## Performance characteristics
 
@@ -109,7 +141,7 @@ This sends the questions to OpenAI for embeddings and may incur charges.
 
 ## Main extension points
 
-- `EmbeddingProvider`: use `OpenAIEmbeddingProvider` for online vectors or `HashingEmbeddingProvider` for offline tests.
+- `EmbeddingProvider`: use `OpenAIEmbeddingProvider` with a compatible embeddings endpoint, or implement the protocol for another API.
 - `SQLiteIndex`: persist documents, chunks, relationships, and embeddings; build an in-memory ChromaDB collection for retrieval.
 - `TraversalConfig`: tune node, depth, bridge, direction, inclusion, and token limits.
 - `Isthmus`: orchestration entry point; graph expansion completes for all candidates before document reranking starts.

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from isthmus.demo import build_demo
+from isthmus.embeddings import EmbeddingProvider
 from isthmus.evaluation.dataset import EvaluationCase
 from isthmus.index import InMemoryIndex
 
 
-def build_sample_evaluation() -> tuple[InMemoryIndex, tuple[EvaluationCase, ...]]:
-    index = build_demo().index
+def build_sample_evaluation(provider: EmbeddingProvider) -> tuple[InMemoryIndex, tuple[EvaluationCase, ...]]:
+    index = build_demo(provider).index
     cases = (
         EvaluationCase(
             case_id="booking-window",

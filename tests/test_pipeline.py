@@ -1,4 +1,4 @@
-from isthmus.embeddings import HashingEmbeddingProvider
+from conftest import FakeEmbeddingProvider
 from isthmus.index import InMemoryIndex
 from isthmus.models import Chunk, Document, Relationship, RelationshipType, SearchHit
 from isthmus.pipeline import Isthmus, PipelineConfig
@@ -14,7 +14,7 @@ class CountingEmbeddingProvider:
 
 
 def test_pipeline_expands_every_candidate_before_returning_document_scores():
-    embeddings = HashingEmbeddingProvider()
+    embeddings = FakeEmbeddingProvider()
     index = InMemoryIndex(embeddings)
     for doc_id, sector, content in [
         ("a", "finance", "travel reimbursement and exceptions policy"),

@@ -3,21 +3,24 @@ from __future__ import annotations
 from collections import Counter
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import sqlite3
 from zipfile import BadZipFile
 
 from dotenv import load_dotenv
+from anthropic import AnthropicError
 from openai import OpenAIError
 from pypdf.errors import PdfReadError
 import streamlit as st
 
-from isthmus.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
+from isthmus.backends import open_index
+from isthmus.embeddings import OpenAIEmbeddingProvider
 from isthmus.document_parsing import parse_document_bytes
 from isthmus.evaluation.dataset import load_dataset_stream
 from isthmus.evaluation.runner import evaluate_dataset
-from isthmus.generation import OpenAIAnswerProvider, generate_answer
-from isthmus.index import SQLiteIndex
+from isthmus.generation import answer_provider, generate_answer
+from isthmus.index import BackendIndex
 from isthmus.ingestion import NoExtractableTextError
 from isthmus.pipeline import Isthmus
 
@@ -28,24 +31,33 @@ def main() -> None:
     st.title("Isthmus")
     st.caption("Adaptive graph retrieval with inspectable evidence and cited answers.")
 
-    database_path = st.sidebar.text_input("SQLite database", "isthmus.db")
-    provider_name = st.sidebar.radio(
-        "Embedding provider",
-        ("Offline hashing (demo)", "OpenAI text-embedding-3-small"),
+    database_path = st.sidebar.text_input("Database", "isthmus.db")
+    embedding_model = st.sidebar.text_input(
+        "Embedding model ID", value=os.getenv("ISTHMUS_EMBEDDING_MODEL", "")
     )
+    embedding_url = st.sidebar.text_input(
+        "Embedding API base URL (optional)", value=os.getenv("ISTHMUS_EMBEDDING_BASE_URL", "")
+    )
+    dimensions = st.sidebar.text_input(
+        "Embedding dimensions (optional)", value=os.getenv("ISTHMUS_EMBEDDING_DIMENSIONS", "")
+    )
+    st.sidebar.caption("Use an OpenAI-compatible embeddings endpoint and set its API key in .env.")
+    if not embedding_model.strip():
+        st.info("Enter an embedding model ID to open or create an index.")
+        st.stop()
     try:
-        provider = (
-            HashingEmbeddingProvider()
-            if provider_name.startswith("Offline")
-            else OpenAIEmbeddingProvider()
+        provider = OpenAIEmbeddingProvider(
+            model=embedding_model,
+            dimensions=int(dimensions) if dimensions.strip() else None,
+            base_url=embedding_url.strip() or None,
         )
-    except RuntimeError as error:
+    except (RuntimeError, ValueError) as error:
         st.error(str(error))
         st.stop()
         return
 
     try:
-        with SQLiteIndex(provider, database_path) as index:
+        with open_index(provider, database_path) as index:
             index_identity = (str(Path(database_path).resolve()), index.provider_id)
             if st.session_state.get("index_identity") != index_identity:
                 st.session_state.pop("retrieval_result", None)
@@ -69,7 +81,7 @@ def main() -> None:
         st.error(str(error))
 
 
-def _documents_page(index: SQLiteIndex) -> None:
+def _documents_page(index: BackendIndex) -> None:
     st.subheader("Sectors")
     with st.form("create_sector", clear_on_submit=True):
         sector_name = st.text_input("New sector name")
@@ -159,9 +171,18 @@ def _documents_page(index: SQLiteIndex) -> None:
         st.info("No documents indexed yet.")
 
 
-def _retrieval_page(index: SQLiteIndex) -> None:
+def _retrieval_page(index: BackendIndex) -> None:
     query = st.text_input("Ask a question")
-    generate = st.checkbox("Generate an answer using GPT-4o mini", value=False)
+    generate = st.checkbox("Generate an answer", value=False)
+    protocol = "openai"
+    model = ""
+    base_url = ""
+    if generate:
+        protocol = st.selectbox("Answer API protocol", ("openai", "anthropic"))
+        model = st.text_input("Answer model ID", value=os.getenv("ISTHMUS_ANSWER_MODEL", ""))
+        base_url = st.text_input(
+            "Answer API base URL (optional)", value=os.getenv("ISTHMUS_ANSWER_BASE_URL", "")
+        )
     if st.button("Retrieve evidence", disabled=not query.strip()):
         if not index.chunks:
             st.warning("Index at least one document before querying.")
@@ -174,9 +195,9 @@ def _retrieval_page(index: SQLiteIndex) -> None:
                 st.session_state.pop("generated_answer", None)
                 if generate:
                     st.session_state["generated_answer"] = generate_answer(
-                        result, index.documents, OpenAIAnswerProvider()
+                        result, index.documents, answer_provider(protocol, model, base_url.strip() or None)
                     )
-            except (OpenAIError, ValueError) as error:
+            except (OpenAIError, AnthropicError, ValueError, RuntimeError) as error:
                 st.error(f"Query failed: {error}")
 
     result = st.session_state.get("retrieval_result")
@@ -253,7 +274,7 @@ def _retrieval_page(index: SQLiteIndex) -> None:
         st.write("Final selected documents:", result.selected_document_ids)
 
 
-def _graph_dot(index: SQLiteIndex, package) -> str:
+def _graph_dot(index: BackendIndex, package) -> str:
     node_names = {
         chunk_id: f"node_{position}"
         for position, chunk_id in enumerate(package.visited_chunk_ids)
@@ -288,7 +309,7 @@ def _graph_dot(index: SQLiteIndex, package) -> str:
     return "\n".join(lines)
 
 
-def _evaluation_page(index: SQLiteIndex) -> None:
+def _evaluation_page(index: BackendIndex) -> None:
     st.subheader("Compare retrieval baselines")
     st.caption(
         "Upload JSONL with manually labeled supporting chunk IDs. "

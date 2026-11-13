@@ -2,22 +2,23 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import os
-from pathlib import Path
 import sqlite3
 from typing import Annotated
 from zipfile import BadZipFile
 
 from dotenv import load_dotenv
+from anthropic import AnthropicError
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.encoders import jsonable_encoder
 from openai import OpenAIError
 from pydantic import BaseModel, Field
 from pypdf.errors import PdfReadError
 
+from isthmus.backends import open_index
 from isthmus.document_parsing import parse_document_bytes
-from isthmus.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
-from isthmus.generation import OpenAIAnswerProvider, generate_answer
-from isthmus.index import SQLiteIndex
+from isthmus.embeddings import OpenAIEmbeddingProvider
+from isthmus.generation import answer_provider, generate_answer
+from isthmus.index import BackendIndex
 from isthmus.pipeline import Isthmus
 
 load_dotenv()
@@ -31,17 +32,19 @@ class SectorRequest(BaseModel):
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1)
     generate_answer: bool = False
+    answer_protocol: str = "openai"
+    answer_model: str = ""
+    answer_base_url: str | None = None
 
 
-def _index() -> SQLiteIndex:
-    provider_name = os.getenv("ISTHMUS_EMBEDDINGS", "openai")
-    if provider_name == "openai":
-        provider = OpenAIEmbeddingProvider()
-    elif provider_name == "hashing":
-        provider = HashingEmbeddingProvider()
-    else:
-        raise ValueError(f"Unknown embedding provider: {provider_name}")
-    return SQLiteIndex(provider, Path(os.getenv("ISTHMUS_DATABASE", "isthmus.db")))
+def _index() -> BackendIndex:
+    dimensions = os.getenv("ISTHMUS_EMBEDDING_DIMENSIONS", "")
+    provider = OpenAIEmbeddingProvider(
+        model=os.getenv("ISTHMUS_EMBEDDING_MODEL", ""),
+        dimensions=int(dimensions) if dimensions else None,
+        base_url=os.getenv("ISTHMUS_EMBEDDING_BASE_URL") or None,
+    )
+    return open_index(provider, os.getenv("ISTHMUS_DATABASE", "isthmus.db"))
 
 
 @app.get("/documents")
@@ -102,7 +105,9 @@ def query(request: QueryRequest) -> dict:
                 raise HTTPException(status_code=400, detail="Index at least one document.")
             result = Isthmus(index).query(request.question)
             answer = (
-                generate_answer(result, index.documents, OpenAIAnswerProvider())
+                generate_answer(result, index.documents, answer_provider(
+                    request.answer_protocol, request.answer_model, request.answer_base_url
+                ))
                 if request.generate_answer else None
             )
             trace = asdict(result)
@@ -111,7 +116,7 @@ def query(request: QueryRequest) -> dict:
             for chunk in trace["context"]:
                 chunk.pop("embedding")
             return {"retrieval": jsonable_encoder(trace), "answer": asdict(answer) if answer else None}
-    except OpenAIError as error:
+    except (OpenAIError, AnthropicError) as error:
         raise HTTPException(status_code=502, detail=f"Model provider error: {type(error).__name__}") from error
     except (ValueError, sqlite3.Error) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

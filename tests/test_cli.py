@@ -2,14 +2,14 @@ import json
 import sys
 
 from isthmus import cli
-from isthmus.embeddings import HashingEmbeddingProvider
+from conftest import FakeEmbeddingProvider
 from isthmus.index import SQLiteIndex
 from isthmus.models import Chunk, Document
 
 
 def test_query_cli_can_generate_answer(tmp_path, monkeypatch, capsys):
     database = tmp_path / "test.db"
-    provider = HashingEmbeddingProvider()
+    provider = FakeEmbeddingProvider()
     with SQLiteIndex(provider, database) as index:
         index.add_document(
             Document("doc", "Policy", "Finance"),
@@ -18,10 +18,10 @@ def test_query_cli_can_generate_answer(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "OpenAIEmbeddingProvider", lambda **kwargs: provider)
     monkeypatch.setattr(
         cli,
-        "OpenAIAnswerProvider",
-        lambda: type("AnswerProvider", (), {"generate": lambda self, prompt: '{"answer":"Approved travel is reimbursed [S1]."}'})(),
+        "answer_provider",
+        lambda *args: type("AnswerProvider", (), {"generate": lambda self, prompt: '{"answer":"Approved travel is reimbursed [S1]."}'})(),
     )
-    monkeypatch.setattr(sys, "argv", ["isthmus", "query", "travel", "--database", str(database), "--answer"])
+    monkeypatch.setattr(sys, "argv", ["isthmus", "query", "travel", "--database", str(database), "--model", "embed", "--answer", "--answer-model", "answer"])
 
     cli.main()
 

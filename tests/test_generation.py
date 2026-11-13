@@ -4,6 +4,7 @@ import pytest
 
 from isthmus.demo import build_demo
 from isthmus.generation import OpenAIAnswerProvider, generate_answer
+from conftest import FakeEmbeddingProvider
 
 
 class FakeAnswerProvider:
@@ -17,7 +18,7 @@ class FakeAnswerProvider:
 
 
 def test_generate_answer_resolves_citations_to_retrieved_sources():
-    pipeline = build_demo()
+    pipeline = build_demo(FakeEmbeddingProvider())
     result = pipeline.query("What are the travel reimbursement rules?")
     provider = FakeAnswerProvider('{"answer": "Travel is reimbursed [S1]."}')
 
@@ -36,14 +37,14 @@ def test_generate_answer_resolves_citations_to_retrieved_sources():
     'not json',
 ])
 def test_generate_answer_rejects_invalid_or_unverifiable_citations(response):
-    pipeline = build_demo()
+    pipeline = build_demo(FakeEmbeddingProvider())
     result = pipeline.query("travel reimbursement")
     with pytest.raises(ValueError):
         generate_answer(result, pipeline.index.documents, FakeAnswerProvider(response))
 
 
 def test_generate_answer_with_no_context_does_not_call_model():
-    pipeline = build_demo()
+    pipeline = build_demo(FakeEmbeddingProvider())
     result = pipeline.query("travel")
     from dataclasses import replace
 
@@ -53,13 +54,13 @@ def test_generate_answer_with_no_context_does_not_call_model():
     assert provider.prompt is None
 
 
-def test_openai_answer_provider_uses_gpt_4o_mini(monkeypatch):
+def test_openai_answer_provider_uses_selected_model(monkeypatch):
     from types import SimpleNamespace
 
     calls = []
 
     class Client:
-        def __init__(self):
+        def __init__(self, **kwargs):
             self.chat = SimpleNamespace(completions=self)
 
         def create(self, **kwargs):
@@ -67,5 +68,26 @@ def test_openai_answer_provider_uses_gpt_4o_mini(monkeypatch):
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer":"ok [S1]"}'))])
 
     monkeypatch.setattr("isthmus.generation.OpenAI", Client)
-    assert OpenAIAnswerProvider().generate("prompt") == '{"answer":"ok [S1]"}'
-    assert calls[0]["model"] == "gpt-4o-mini"
+    monkeypatch.setenv("ISTHMUS_ANSWER_API_KEY", "test")
+    assert OpenAIAnswerProvider("my-model").generate("prompt") == '{"answer":"ok [S1]"}'
+    assert calls[0]["model"] == "my-model"
+
+
+def test_anthropic_answer_provider_uses_selected_model(monkeypatch):
+    from types import SimpleNamespace
+    from isthmus.generation import AnthropicAnswerProvider
+
+    calls = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            self.messages = self
+
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text='{"answer":"ok [S1]"}')])
+
+    monkeypatch.setattr("isthmus.generation.Anthropic", Client)
+    monkeypatch.setenv("ISTHMUS_ANSWER_API_KEY", "test")
+    assert AnthropicAnswerProvider("chosen-model").generate("prompt") == '{"answer":"ok [S1]"}'
+    assert calls[0]["model"] == "chosen-model"

@@ -1,10 +1,12 @@
 from fastapi.testclient import TestClient
 
 from isthmus.api import app
+from conftest import FakeEmbeddingProvider
 
 
 def test_document_and_query_workflow(tmp_path, monkeypatch):
-    monkeypatch.setenv("ISTHMUS_EMBEDDINGS", "hashing")
+    monkeypatch.setenv("ISTHMUS_EMBEDDING_MODEL", "test")
+    monkeypatch.setattr("isthmus.api.OpenAIEmbeddingProvider", lambda **kwargs: FakeEmbeddingProvider())
     monkeypatch.setenv("ISTHMUS_DATABASE", str(tmp_path / "test.db"))
     client = TestClient(app)
     assert client.post("/sectors", json={"name": "Finance"}).status_code == 201
@@ -24,7 +26,8 @@ def test_document_and_query_workflow(tmp_path, monkeypatch):
 
 
 def test_upload_requires_existing_sector(tmp_path, monkeypatch):
-    monkeypatch.setenv("ISTHMUS_EMBEDDINGS", "hashing")
+    monkeypatch.setenv("ISTHMUS_EMBEDDING_MODEL", "test")
+    monkeypatch.setattr("isthmus.api.OpenAIEmbeddingProvider", lambda **kwargs: FakeEmbeddingProvider())
     monkeypatch.setenv("ISTHMUS_DATABASE", str(tmp_path / "test.db"))
     response = TestClient(app).post(
         "/documents",

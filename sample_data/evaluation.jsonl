@@ -1,0 +1,4 @@
+{"id":"booking","query":"How far in advance should business air travel be booked?","evidence_chunk_ids":["69b48bd158e6efa7710d:c2"],"supporting_document_ids":["69b48bd158e6efa7710d"]}
+{"id":"exceptions","query":"What exception to advance booking is allowed and who must approve it?","evidence_chunk_ids":["69b48bd158e6efa7710d:c3"],"exception_chunk_ids":["69b48bd158e6efa7710d:c3"],"supporting_document_ids":["69b48bd158e6efa7710d"]}
+{"id":"receipts","query":"When must employees submit itemized receipts?","evidence_chunk_ids":["69b48bd158e6efa7710d:c4"],"supporting_document_ids":["69b48bd158e6efa7710d"]}
+{"id":"expense-security","query":"How should expense reports containing personal information be sent?","evidence_chunk_ids":["9b7ca5823367c380e68e:c2"],"supporting_document_ids":["9b7ca5823367c380e68e"]}

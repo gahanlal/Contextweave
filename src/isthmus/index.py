@@ -137,7 +137,31 @@ class InMemoryIndex:
         return normalized_cosine_similarity(query_vector, chunk.embedding)
 
 
-class SQLiteIndex(InMemoryIndex):
+class BackendIndex(InMemoryIndex):
+    """Base interface for a managed, replaceable index backend."""
+
+    provider_id: str
+
+    def add_sector(self, sector_id: str) -> None:
+        raise NotImplementedError
+
+    def remove_sector(self, sector_id: str) -> None:
+        raise NotImplementedError
+
+    def remove_document(self, document_id: str) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+    def __enter__(self) -> BackendIndex:
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback) -> None:
+        self.close()
+
+
+class SQLiteIndex(BackendIndex):
     """Persist indexed content in SQLite and keep vectors cached for local search."""
 
     def __init__(
@@ -271,6 +295,16 @@ class SQLiteIndex(InMemoryIndex):
         ).fetchone()
         if row is not None:
             if row["value"] != self.provider_id:
+                has_vectors = self.connection.execute(
+                    "SELECT EXISTS(SELECT 1 FROM chunks LIMIT 1)"
+                ).fetchone()[0]
+                if not has_vectors:
+                    with self.connection:
+                        self.connection.execute(
+                            "UPDATE index_metadata SET value = ? WHERE key = 'embedding_provider'",
+                            (self.provider_id,),
+                        )
+                    return
                 self.connection.close()
                 raise ValueError(
                     f"Database embeddings use {row['value']}; selected provider is "
