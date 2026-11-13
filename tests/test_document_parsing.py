@@ -5,8 +5,8 @@ from openpyxl import Workbook
 from pptx import Presentation
 import pytest
 
-from contextweave.document_parsing import parse_document_bytes
-from contextweave.models import RelationshipType
+from isthmus.document_parsing import parse_document_bytes
+from isthmus.models import RelationshipType
 
 
 def _bytes(document):

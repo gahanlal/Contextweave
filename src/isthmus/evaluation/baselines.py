@@ -5,12 +5,12 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Callable
 
-from contextweave.graph import AdaptiveGraphRetriever
-from contextweave.index import InMemoryIndex
-from contextweave.models import Chunk, EvidencePackage, QueryPlan, SearchHit
-from contextweave.pipeline import ContextWeave, PipelineConfig
-from contextweave.query import understand_query
-from contextweave.selection import (
+from isthmus.graph import AdaptiveGraphRetriever
+from isthmus.index import InMemoryIndex
+from isthmus.models import Chunk, EvidencePackage, QueryPlan, SearchHit
+from isthmus.pipeline import Isthmus, PipelineConfig
+from isthmus.query import understand_query
+from isthmus.selection import (
     discover_documents,
     score_sectors,
     select_sectors,
@@ -37,10 +37,10 @@ def run_baselines(
     index: InMemoryIndex,
     query: str,
     config: PipelineConfig | None = None,
-    pipeline: ContextWeave | None = None,
+    pipeline: Isthmus | None = None,
 ) -> tuple[BaselineResult, ...]:
     config = config or PipelineConfig()
-    pipeline = pipeline or ContextWeave(index, config)
+    pipeline = pipeline or Isthmus(index, config)
     shared_started = perf_counter()
     query_vector = index.embed_query(query)
     hits = index.search_by_vector(query_vector, limit=config.global_top_k)

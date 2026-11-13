@@ -4,11 +4,11 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from statistics import mean
 
-from contextweave.evaluation.baselines import run_baselines
-from contextweave.evaluation.dataset import EvaluationCase
-from contextweave.evaluation.metrics import CaseMetrics, score_case
-from contextweave.index import InMemoryIndex
-from contextweave.pipeline import ContextWeave, PipelineConfig
+from isthmus.evaluation.baselines import run_baselines
+from isthmus.evaluation.dataset import EvaluationCase
+from isthmus.evaluation.metrics import CaseMetrics, score_case
+from isthmus.index import InMemoryIndex
+from isthmus.pipeline import Isthmus, PipelineConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +43,7 @@ def evaluate_dataset(
                 f"case {case.case_id} refers to unknown chunk IDs "
                 f"{sorted(unknown_chunks)} or document IDs {sorted(unknown_documents)}"
             )
-    pipeline = ContextWeave(index, config)
+    pipeline = Isthmus(index, config)
     scored_cases = []
     for case in cases:
         results = run_baselines(index, case.query, config, pipeline)

@@ -1,7 +1,7 @@
-from contextweave.embeddings import HashingEmbeddingProvider
-from contextweave.index import InMemoryIndex
-from contextweave.models import Chunk, Document, Relationship, RelationshipType, SearchHit
-from contextweave.pipeline import ContextWeave, PipelineConfig
+from isthmus.embeddings import HashingEmbeddingProvider
+from isthmus.index import InMemoryIndex
+from isthmus.models import Chunk, Document, Relationship, RelationshipType, SearchHit
+from isthmus.pipeline import Isthmus, PipelineConfig
 
 
 class CountingEmbeddingProvider:
@@ -26,7 +26,7 @@ def test_pipeline_expands_every_candidate_before_returning_document_scores():
         ]
         index.add_document(Document(doc_id, doc_id, sector), chunks)
         index.add_relationship(Relationship(f"{doc_id}-1", f"{doc_id}-2", RelationshipType.NEXT))
-    result = ContextWeave(
+    result = Isthmus(
         index,
         PipelineConfig(sector_threshold=0.0, global_top_k=10, target_documents=1),
     ).query("What are the travel reimbursement rules and exceptions?")
@@ -49,7 +49,7 @@ def test_pipeline_embeds_query_once_for_search_and_graph_expansion():
     )
     embeddings.calls = 0
 
-    ContextWeave(
+    Isthmus(
         index,
         PipelineConfig(sector_threshold=0.0, global_top_k=10),
     ).query("policy")
@@ -59,7 +59,7 @@ def test_pipeline_embeds_query_once_for_search_and_graph_expansion():
 
 def test_pipeline_reuses_graph_structure_until_index_changes():
     index = InMemoryIndex(CountingEmbeddingProvider())
-    pipeline = ContextWeave(index)
+    pipeline = Isthmus(index)
 
     original = pipeline._get_graph_retriever()
     assert pipeline._get_graph_retriever() is original
@@ -83,7 +83,7 @@ def test_pipeline_expands_bounded_fallback_candidates_when_evidence_is_incomplet
         SearchHit(index.chunks["main"], 0.9, 1),
         SearchHit(index.chunks["exception"], 0.8, 2),
     )
-    result = ContextWeave(index, PipelineConfig(
+    result = Isthmus(index, PipelineConfig(
         sector_threshold=0.0, candidate_document_pool=1, fallback_document_pool=2,
     )).query("travel reimbursement and exceptions", query_vector=(1.0, 0.0), global_hits=hits)
 

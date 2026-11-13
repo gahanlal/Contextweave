@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
 
-from contextweave.api import app
+from isthmus.api import app
 
 
 def test_document_and_query_workflow(tmp_path, monkeypatch):
-    monkeypatch.setenv("CONTEXTWEAVE_EMBEDDINGS", "hashing")
-    monkeypatch.setenv("CONTEXTWEAVE_DATABASE", str(tmp_path / "test.db"))
+    monkeypatch.setenv("ISTHMUS_EMBEDDINGS", "hashing")
+    monkeypatch.setenv("ISTHMUS_DATABASE", str(tmp_path / "test.db"))
     client = TestClient(app)
     assert client.post("/sectors", json={"name": "Finance"}).status_code == 201
     upload = client.post(
@@ -24,8 +24,8 @@ def test_document_and_query_workflow(tmp_path, monkeypatch):
 
 
 def test_upload_requires_existing_sector(tmp_path, monkeypatch):
-    monkeypatch.setenv("CONTEXTWEAVE_EMBEDDINGS", "hashing")
-    monkeypatch.setenv("CONTEXTWEAVE_DATABASE", str(tmp_path / "test.db"))
+    monkeypatch.setenv("ISTHMUS_EMBEDDINGS", "hashing")
+    monkeypatch.setenv("ISTHMUS_DATABASE", str(tmp_path / "test.db"))
     response = TestClient(app).post(
         "/documents",
         data={"sector": "missing"},

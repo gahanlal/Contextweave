@@ -14,14 +14,14 @@ from openai import OpenAIError
 from pydantic import BaseModel, Field
 from pypdf.errors import PdfReadError
 
-from contextweave.document_parsing import parse_document_bytes
-from contextweave.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
-from contextweave.generation import OpenAIAnswerProvider, generate_answer
-from contextweave.index import SQLiteIndex
-from contextweave.pipeline import ContextWeave
+from isthmus.document_parsing import parse_document_bytes
+from isthmus.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
+from isthmus.generation import OpenAIAnswerProvider, generate_answer
+from isthmus.index import SQLiteIndex
+from isthmus.pipeline import Isthmus
 
 load_dotenv()
-app = FastAPI(title="ContextWeave")
+app = FastAPI(title="Isthmus")
 
 
 class SectorRequest(BaseModel):
@@ -34,14 +34,14 @@ class QueryRequest(BaseModel):
 
 
 def _index() -> SQLiteIndex:
-    provider_name = os.getenv("CONTEXTWEAVE_EMBEDDINGS", "openai")
+    provider_name = os.getenv("ISTHMUS_EMBEDDINGS", "openai")
     if provider_name == "openai":
         provider = OpenAIEmbeddingProvider()
     elif provider_name == "hashing":
         provider = HashingEmbeddingProvider()
     else:
         raise ValueError(f"Unknown embedding provider: {provider_name}")
-    return SQLiteIndex(provider, Path(os.getenv("CONTEXTWEAVE_DATABASE", "contextweave.db")))
+    return SQLiteIndex(provider, Path(os.getenv("ISTHMUS_DATABASE", "isthmus.db")))
 
 
 @app.get("/documents")
@@ -100,7 +100,7 @@ def query(request: QueryRequest) -> dict:
         with _index() as index:
             if not index.chunks:
                 raise HTTPException(status_code=400, detail="Index at least one document.")
-            result = ContextWeave(index).query(request.question)
+            result = Isthmus(index).query(request.question)
             answer = (
                 generate_answer(result, index.documents, OpenAIAnswerProvider())
                 if request.generate_answer else None

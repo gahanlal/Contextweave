@@ -14,8 +14,8 @@ from docx.text.paragraph import Paragraph
 from openpyxl import load_workbook
 from pptx import Presentation
 
-from contextweave.ingestion import NoExtractableTextError, _split_text, parse_pdf_bytes
-from contextweave.models import Chunk, Document, Relationship, RelationshipType
+from isthmus.ingestion import NoExtractableTextError, _split_text, parse_pdf_bytes
+from isthmus.models import Chunk, Document, Relationship, RelationshipType
 
 
 @dataclass(frozen=True, slots=True)

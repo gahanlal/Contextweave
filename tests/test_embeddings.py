@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from contextweave.embeddings import OpenAIEmbeddingProvider
+from isthmus.embeddings import OpenAIEmbeddingProvider
 
 
 def test_openai_provider_batches_and_restores_input_order(monkeypatch):
@@ -22,7 +22,7 @@ def test_openai_provider_batches_and_restores_input_order(monkeypatch):
         embeddings = Embeddings()
 
     monkeypatch.setattr(
-        "contextweave.embeddings.OpenAI",
+        "isthmus.embeddings.OpenAI",
         lambda api_key: FakeClient(),
     )
     provider = OpenAIEmbeddingProvider(api_key="test-key")

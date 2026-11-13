@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-from contextweave.evaluation.dataset import load_dataset_stream
-from contextweave.evaluation.runner import evaluate_dataset
-from contextweave.evaluation.sample import build_sample_evaluation
+from isthmus.evaluation.dataset import load_dataset_stream
+from isthmus.evaluation.runner import evaluate_dataset
+from isthmus.evaluation.sample import build_sample_evaluation
 
 
 def test_dataset_loader_parses_evidence_and_requirement_labels():

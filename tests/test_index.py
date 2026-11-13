@@ -2,8 +2,8 @@ import sqlite3
 
 import pytest
 
-from contextweave.index import InMemoryIndex, SQLiteIndex
-from contextweave.models import (
+from isthmus.index import InMemoryIndex, SQLiteIndex
+from isthmus.models import (
     Chunk,
     Document,
     Relationship,
@@ -35,7 +35,7 @@ def test_search_returns_top_k_with_deterministic_ties():
 
 
 def test_sqlite_index_persists_content_relationships_and_vectors(tmp_path):
-    database_path = tmp_path / "contextweave.db"
+    database_path = tmp_path / "isthmus.db"
     document = Document("doc", "Document", "sector")
     chunks = [
         Chunk("one", "doc", "sector", "first chunk", 1),
@@ -64,7 +64,7 @@ def test_sqlite_index_persists_content_relationships_and_vectors(tmp_path):
 
 
 def test_sqlite_sector_and_document_management(tmp_path):
-    database_path = tmp_path / "contextweave.db"
+    database_path = tmp_path / "isthmus.db"
     with SQLiteIndex(FixedEmbeddingProvider(), database_path) as index:
         index.add_sector("Empty")
         document = Document("doc", "Document", "sector")
@@ -94,7 +94,7 @@ def test_sqlite_rejects_a_different_embedding_provider(tmp_path):
         def embed(self, _text):
             return (0.0, 1.0)
 
-    database_path = tmp_path / "contextweave.db"
+    database_path = tmp_path / "isthmus.db"
     with SQLiteIndex(FixedEmbeddingProvider(), database_path) as index:
         index.add_document(
             Document("doc", "Document", "sector"),
@@ -110,7 +110,7 @@ def test_sqlite_rejects_a_different_embedding_provider(tmp_path):
 
 
 def test_reindex_rolls_back_document_if_relationship_storage_fails(tmp_path):
-    database_path = tmp_path / "contextweave.db"
+    database_path = tmp_path / "isthmus.db"
     document = Document("doc", "Document", "sector")
     edge = Relationship("new", "new", RelationshipType.REFERENCES)
     with SQLiteIndex(FixedEmbeddingProvider(), database_path) as index:
@@ -125,7 +125,7 @@ def test_reindex_rolls_back_document_if_relationship_storage_fails(tmp_path):
 
 
 def test_loading_relationships_does_not_write_to_database(tmp_path, monkeypatch):
-    database_path = tmp_path / "contextweave.db"
+    database_path = tmp_path / "isthmus.db"
     with SQLiteIndex(FixedEmbeddingProvider(), database_path) as index:
         index.add_document(
             Document("doc", "Document", "sector"),

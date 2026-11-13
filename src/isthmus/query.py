@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from contextweave.models import QueryPlan, QueryRequirement
+from isthmus.models import QueryPlan, QueryRequirement
 
 _STOP_WORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "do", "for", "from",

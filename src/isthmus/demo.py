@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 
-from contextweave.embeddings import HashingEmbeddingProvider
-from contextweave.index import InMemoryIndex
-from contextweave.models import Chunk, Document, Relationship, RelationshipType
-from contextweave.pipeline import ContextWeave, PipelineConfig
+from isthmus.embeddings import HashingEmbeddingProvider
+from isthmus.index import InMemoryIndex
+from isthmus.models import Chunk, Document, Relationship, RelationshipType
+from isthmus.pipeline import Isthmus, PipelineConfig
 
 
-def build_demo() -> ContextWeave:
+def build_demo() -> Isthmus:
     embeddings = HashingEmbeddingProvider()
     index = InMemoryIndex(embeddings)
     document = Document("policy-001", "Travel Reimbursement Policy", "Finance")
@@ -43,7 +43,7 @@ def build_demo() -> ContextWeave:
     index.add_relationship(
         Relationship(chunks[1].id, chunks[2].id, RelationshipType.QUALIFIES)
     )
-    return ContextWeave(
+    return Isthmus(
         index,
         PipelineConfig(sector_threshold=0.0),
     )

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from contextweave.demo import build_demo
-from contextweave.evaluation.dataset import EvaluationCase
-from contextweave.index import InMemoryIndex
+from isthmus.demo import build_demo
+from isthmus.evaluation.dataset import EvaluationCase
+from isthmus.index import InMemoryIndex
 
 
 def build_sample_evaluation() -> tuple[InMemoryIndex, tuple[EvaluationCase, ...]]:

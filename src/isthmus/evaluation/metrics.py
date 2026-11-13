@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from contextweave.evaluation.baselines import BaselineResult
-from contextweave.evaluation.dataset import EvaluationCase
-from contextweave.index import InMemoryIndex
+from isthmus.evaluation.baselines import BaselineResult
+from isthmus.evaluation.dataset import EvaluationCase
+from isthmus.index import InMemoryIndex
 
 
 @dataclass(frozen=True, slots=True)

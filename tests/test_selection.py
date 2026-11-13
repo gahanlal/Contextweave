@@ -1,5 +1,5 @@
-from contextweave.models import EvidencePackage, QueryPlan, QueryRequirement
-from contextweave.selection import rerank_documents
+from isthmus.models import EvidencePackage, QueryPlan, QueryRequirement
+from isthmus.selection import rerank_documents
 
 
 def package(document_id, score, supported, sections=()):

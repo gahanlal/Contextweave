@@ -4,7 +4,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from heapq import nlargest, nsmallest
 
-from contextweave.models import (
+from isthmus.models import (
     DocumentAssessment,
     EvidencePackage,
     QueryPlan,

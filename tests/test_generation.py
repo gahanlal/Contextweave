@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from contextweave.demo import build_demo
-from contextweave.generation import OpenAIAnswerProvider, generate_answer
+from isthmus.demo import build_demo
+from isthmus.generation import OpenAIAnswerProvider, generate_answer
 
 
 class FakeAnswerProvider:
@@ -66,6 +66,6 @@ def test_openai_answer_provider_uses_gpt_4o_mini(monkeypatch):
             calls.append(kwargs)
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer":"ok [S1]"}'))])
 
-    monkeypatch.setattr("contextweave.generation.OpenAI", Client)
+    monkeypatch.setattr("isthmus.generation.OpenAI", Client)
     assert OpenAIAnswerProvider().generate("prompt") == '{"answer":"ok [S1]"}'
     assert calls[0]["model"] == "gpt-4o-mini"

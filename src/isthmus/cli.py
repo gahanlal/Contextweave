@@ -7,15 +7,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from contextweave.embeddings import OpenAIEmbeddingProvider
-from contextweave.generation import OpenAIAnswerProvider, generate_answer
-from contextweave.index import SQLiteIndex
-from contextweave.ingestion import NoExtractableTextError, parse_pdf
-from contextweave.pipeline import ContextWeave
+from isthmus.embeddings import OpenAIEmbeddingProvider
+from isthmus.generation import OpenAIAnswerProvider, generate_answer
+from isthmus.index import SQLiteIndex
+from isthmus.ingestion import NoExtractableTextError, parse_pdf
+from isthmus.pipeline import Isthmus
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="contextweave")
+    parser = argparse.ArgumentParser(prog="isthmus")
     commands = parser.add_subparsers(dest="command", required=True)
 
     index_parser = commands.add_parser(
@@ -23,7 +23,7 @@ def main() -> None:
         help="Extract PDFs, create online embeddings, and store them in SQLite.",
     )
     index_parser.add_argument("--pdf-dir", type=Path, default=Path("testfiles"))
-    index_parser.add_argument("--database", type=Path, default=Path("contextweave.db"))
+    index_parser.add_argument("--database", type=Path, default=Path("isthmus.db"))
     index_parser.add_argument("--model", default="text-embedding-3-small")
 
     query_parser = commands.add_parser(
@@ -31,7 +31,7 @@ def main() -> None:
         help="Run retrieval against a previously indexed SQLite database.",
     )
     query_parser.add_argument("question", nargs="+")
-    query_parser.add_argument("--database", type=Path, default=Path("contextweave.db"))
+    query_parser.add_argument("--database", type=Path, default=Path("isthmus.db"))
     query_parser.add_argument("--model", default="text-embedding-3-small")
     query_parser.add_argument("--answer", action="store_true", help="Generate a cited answer using OpenAI.")
 
@@ -94,7 +94,7 @@ def _query(
     with SQLiteIndex(provider, database_path) as index:
         if not index.chunks:
             raise RuntimeError(f"No chunks are indexed in {database_path}")
-        result = ContextWeave(index).query(question)
+        result = Isthmus(index).query(question)
         generated = (
             generate_answer(result, index.documents, OpenAIAnswerProvider())
             if answer else None

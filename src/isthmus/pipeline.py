@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from contextweave.graph import AdaptiveGraphRetriever, TraversalConfig
-from contextweave.index import InMemoryIndex
-from contextweave.models import Chunk, EvidencePackage, RetrievalResult, SearchHit
-from contextweave.query import understand_query
-from contextweave.selection import discover_documents, rerank_documents, score_sectors, select_sectors
+from isthmus.graph import AdaptiveGraphRetriever, TraversalConfig
+from isthmus.index import InMemoryIndex
+from isthmus.models import Chunk, EvidencePackage, RetrievalResult, SearchHit
+from isthmus.query import understand_query
+from isthmus.selection import discover_documents, rerank_documents, score_sectors, select_sectors
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ class PipelineConfig:
     traversal: TraversalConfig = TraversalConfig()
 
 
-class ContextWeave:
+class Isthmus:
     """Orchestrates global retrieval through document-level evidence selection."""
 
     def __init__(self, index: InMemoryIndex, config: PipelineConfig | None = None) -> None:

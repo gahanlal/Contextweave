@@ -1,4 +1,4 @@
-from contextweave.ingestion import _split_text, sector_for_pdf
+from isthmus.ingestion import _split_text, sector_for_pdf
 
 
 def test_pdf_text_split_respects_word_limit_and_preserves_content():

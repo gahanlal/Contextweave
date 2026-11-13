@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "contextweave"
+name = "isthmus"
 version = "0.1.0"
 description = "An inspectable adaptive graph retrieval research POC"
 requires-python = ">=3.11"
@@ -25,9 +25,9 @@ dev = ["pytest>=8.0"]
 ui = ["streamlit>=1.35"]
 
 [project.scripts]
-contextweave-demo = "contextweave.demo:main"
-contextweave = "contextweave.cli:main"
-contextweave-evaluate = "contextweave.evaluation.cli:main"
+isthmus-demo = "isthmus.demo:main"
+isthmus = "isthmus.cli:main"
+isthmus-evaluate = "isthmus.evaluation.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

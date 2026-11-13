@@ -7,7 +7,7 @@ from typing import Protocol
 
 from openai import OpenAI
 
-from contextweave.models import Document, RetrievalResult
+from isthmus.models import Document, RetrievalResult
 
 
 @dataclass(frozen=True, slots=True)

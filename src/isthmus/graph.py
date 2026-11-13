@@ -4,7 +4,7 @@ from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from contextweave.models import (
+from isthmus.models import (
     Chunk,
     EvidencePackage,
     QueryPlan,
@@ -13,7 +13,7 @@ from contextweave.models import (
     SearchHit,
     TraversalPath,
 )
-from contextweave.query import terms
+from isthmus.query import terms
 
 
 @dataclass(frozen=True, slots=True)

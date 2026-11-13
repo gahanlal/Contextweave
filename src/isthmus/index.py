@@ -12,13 +12,13 @@ from uuid import uuid4
 import chromadb
 from chromadb.config import Settings
 
-from contextweave.embeddings import (
+from isthmus.embeddings import (
     EmbeddingProvider,
     embed_many,
     normalize_vector,
     normalized_cosine_similarity,
 )
-from contextweave.models import (
+from isthmus.models import (
     Chunk,
     Document,
     Relationship,
@@ -143,7 +143,7 @@ class SQLiteIndex(InMemoryIndex):
     def __init__(
         self,
         embedding_provider: EmbeddingProvider,
-        database_path: str | Path = "contextweave.db",
+        database_path: str | Path = "isthmus.db",
     ) -> None:
         super().__init__(embedding_provider)
         self.database_path = str(database_path)
@@ -186,7 +186,7 @@ class SQLiteIndex(InMemoryIndex):
             if self._vector_collection is not None:
                 self._vector_client.delete_collection(self._vector_collection.name)
             self._vector_collection = self._vector_client.create_collection(
-                name=f"contextweave-{uuid4().hex}",
+                name=f"isthmus-{uuid4().hex}",
                 metadata={"hnsw:space": "cosine"},
                 embedding_function=None,
             )

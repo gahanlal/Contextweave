@@ -8,7 +8,7 @@ from typing import BinaryIO
 
 from pypdf import PdfReader
 
-from contextweave.models import (
+from isthmus.models import (
     Chunk,
     Document,
     Relationship,

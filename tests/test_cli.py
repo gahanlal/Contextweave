@@ -1,10 +1,10 @@
 import json
 import sys
 
-from contextweave import cli
-from contextweave.embeddings import HashingEmbeddingProvider
-from contextweave.index import SQLiteIndex
-from contextweave.models import Chunk, Document
+from isthmus import cli
+from isthmus.embeddings import HashingEmbeddingProvider
+from isthmus.index import SQLiteIndex
+from isthmus.models import Chunk, Document
 
 
 def test_query_cli_can_generate_answer(tmp_path, monkeypatch, capsys):
@@ -21,7 +21,7 @@ def test_query_cli_can_generate_answer(tmp_path, monkeypatch, capsys):
         "OpenAIAnswerProvider",
         lambda: type("AnswerProvider", (), {"generate": lambda self, prompt: '{"answer":"Approved travel is reimbursed [S1]."}'})(),
     )
-    monkeypatch.setattr(sys, "argv", ["contextweave", "query", "travel", "--database", str(database), "--answer"])
+    monkeypatch.setattr(sys, "argv", ["isthmus", "query", "travel", "--database", str(database), "--answer"])
 
     cli.main()
 

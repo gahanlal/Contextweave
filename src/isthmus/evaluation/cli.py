@@ -5,16 +5,16 @@ import json
 
 from dotenv import load_dotenv
 
-from contextweave.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
-from contextweave.evaluation.dataset import load_dataset
-from contextweave.evaluation.runner import evaluate_dataset
-from contextweave.evaluation.sample import build_sample_evaluation
-from contextweave.index import SQLiteIndex
-from contextweave.pipeline import PipelineConfig
+from isthmus.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
+from isthmus.evaluation.dataset import load_dataset
+from isthmus.evaluation.runner import evaluate_dataset
+from isthmus.evaluation.sample import build_sample_evaluation
+from isthmus.index import SQLiteIndex
+from isthmus.pipeline import PipelineConfig
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="contextweave-evaluate")
+    parser = argparse.ArgumentParser(prog="isthmus-evaluate")
     parser.add_argument("--demo", action="store_true")
     parser.add_argument("--database")
     parser.add_argument("--dataset")

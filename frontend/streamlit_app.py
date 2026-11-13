@@ -12,23 +12,23 @@ from openai import OpenAIError
 from pypdf.errors import PdfReadError
 import streamlit as st
 
-from contextweave.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
-from contextweave.document_parsing import parse_document_bytes
-from contextweave.evaluation.dataset import load_dataset_stream
-from contextweave.evaluation.runner import evaluate_dataset
-from contextweave.generation import OpenAIAnswerProvider, generate_answer
-from contextweave.index import SQLiteIndex
-from contextweave.ingestion import NoExtractableTextError
-from contextweave.pipeline import ContextWeave
+from isthmus.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
+from isthmus.document_parsing import parse_document_bytes
+from isthmus.evaluation.dataset import load_dataset_stream
+from isthmus.evaluation.runner import evaluate_dataset
+from isthmus.generation import OpenAIAnswerProvider, generate_answer
+from isthmus.index import SQLiteIndex
+from isthmus.ingestion import NoExtractableTextError
+from isthmus.pipeline import Isthmus
 
 
 def main() -> None:
     load_dotenv()
-    st.set_page_config(page_title="ContextWeave", layout="wide")
-    st.title("ContextWeave")
+    st.set_page_config(page_title="Isthmus", layout="wide")
+    st.title("Isthmus")
     st.caption("Adaptive graph retrieval with inspectable evidence and cited answers.")
 
-    database_path = st.sidebar.text_input("SQLite database", "contextweave.db")
+    database_path = st.sidebar.text_input("SQLite database", "isthmus.db")
     provider_name = st.sidebar.radio(
         "Embedding provider",
         ("Offline hashing (demo)", "OpenAI text-embedding-3-small"),
@@ -169,7 +169,7 @@ def _retrieval_page(index: SQLiteIndex) -> None:
             try:
                 st.session_state.pop("retrieval_result", None)
                 st.session_state.pop("generated_answer", None)
-                result = ContextWeave(index).query(query)
+                result = Isthmus(index).query(query)
                 st.session_state["retrieval_result"] = result
                 st.session_state.pop("generated_answer", None)
                 if generate:

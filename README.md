@@ -1,6 +1,6 @@
-# ContextWeave
+# Isthmus
 
-ContextWeave is a research POC for testing adaptive, document-local graph retrieval. Its core hypothesis is that bounded expansion through a document's chunk graph can recover useful context across low-similarity bridges, while reranking complete document evidence packages can favor complementary evidence over redundant high-scoring chunks.
+Isthmus is a research POC for testing adaptive, document-local graph retrieval. Its core hypothesis is that bounded expansion through a document's chunk graph can recover useful context across low-similarity bridges, while reranking complete document evidence packages can favor complementary evidence over redundant high-scoring chunks.
 
 ## Current implementation
 
@@ -20,19 +20,21 @@ The retrieval core uses SQLite for durable documents and graph relationships and
 ```bash
 python -m pip install -e ".[dev]"
 pytest
-contextweave-demo
+isthmus-demo
 ```
 
 Set `OPENAI_API_KEY` in the environment or a local, ignored `.env` file to use online embeddings. Indexing sends extracted PDF text to OpenAI, and API usage may incur charges. The key is read locally and must not be committed.
 
-The example PDFs and the local database are not distributed with this repository. Add PDFs you have permission to use to `testfiles/`, then index them into `contextweave.db` and run a retrieval query:
+The example PDFs and the local database are not distributed with this repository. Add PDFs you have permission to use to `testfiles/`, then index them into `isthmus.db` and run a retrieval query:
 
 ```bash
-python -m contextweave.cli index-pdfs
-python -m contextweave.cli query "What cybercrime laws and exceptions apply?"
+python -m isthmus.cli index-pdfs
+python -m isthmus.cli query "What cybercrime laws and exceptions apply?"
 ```
 
-The index command reports PDFs without extractable text; OCR is not implemented. The query command prints retrieved evidence and provenance. Add `--answer` to generate a cited answer with OpenAI `gpt-4o-mini`; this incurs API charges. The separate demo still prints an inspectable trace for a small synthetic policy. Neither is a quality evaluation, and no claim is made that ContextWeave outperforms conventional retrieval.
+Existing installations can keep using their previous database file: pass its path with `--database`, enter it in the Streamlit sidebar, or set `ISTHMUS_DATABASE` for the HTTP API. The new default does not automatically move or overwrite existing data. The API configuration variables are now `ISTHMUS_DATABASE` and `ISTHMUS_EMBEDDINGS`.
+
+The index command reports PDFs without extractable text; OCR is not implemented. The query command prints retrieved evidence and provenance. Add `--answer` to generate a cited answer with OpenAI `gpt-4o-mini`; this incurs API charges. The separate demo still prints an inspectable trace for a small synthetic policy. Neither is a quality evaluation, and no claim is made that Isthmus outperforms conventional retrieval.
 
 ## Streamlit interface
 
@@ -49,14 +51,14 @@ Generated citations use identifiers assigned to retrieved evidence and are check
 
 ## HTTP API
 
-Run `uvicorn contextweave.api:app` and visit its `/docs` endpoint for document upload, sector creation, deletion, and retrieval. Set `CONTEXTWEAVE_DATABASE` to select the SQLite file and `CONTEXTWEAVE_EMBEDDINGS` to `openai` (default) or `hashing`. The API is intended for local use and has no authentication; do not expose it publicly.
+Run `uvicorn isthmus.api:app` and visit its `/docs` endpoint for document upload, sector creation, deletion, and retrieval. Set `ISTHMUS_DATABASE` to select the SQLite file and `ISTHMUS_EMBEDDINGS` to `openai` (default) or `hashing`. The API is intended for local use and has no authentication; do not expose it publicly.
 
 ## Retrieval evaluation
 
 Run the built-in three-query synthetic smoke dataset:
 
 ```bash
-python -m contextweave.evaluation.cli --demo
+python -m isthmus.evaluation.cli --demo
 ```
 
 For corpus evaluation, provide JSONL with one manually labeled case per line:
@@ -68,7 +70,7 @@ For corpus evaluation, provide JSONL with one manually labeled case per line:
 Then run:
 
 ```bash
-python -m contextweave.evaluation.cli --database contextweave.db --dataset evaluation.jsonl --provider hashing
+python -m isthmus.evaluation.cli --database isthmus.db --dataset evaluation.jsonl --provider hashing
 ```
 
 The runner compares top-k, fixed-window, adaptive graph, sector-routed graph, and document-reranked retrieval. It reports evidence/exception recall, requirement coverage, document selection precision/recall/F1, chunk/token counts, and retrieval latency. Answer correctness and citation correctness are not yet measured. The three-query demo is only a smoke test; credible comparisons still require a larger manually labeled corpus.
@@ -76,7 +78,7 @@ The runner compares top-k, fixed-window, adaptive graph, sector-routed graph, an
 `evaluation/pdf-draft.jsonl` contains nine draft cases derived from a local PDF collection that is not included in the repository. These labels were prepared by the assistant, not independently human-reviewed; they are illustrative, not a representative benchmark. They only work with the same documents, filenames and chunk boundaries; otherwise, create labels for your own index. Review the labels and expand the corpus before using the results as evidence of retrieval quality. With the matching collection indexed, run:
 
 ```bash
-python -m contextweave.evaluation.cli --database contextweave.db --dataset evaluation/pdf-draft.jsonl --provider openai
+python -m isthmus.evaluation.cli --database isthmus.db --dataset evaluation/pdf-draft.jsonl --provider openai
 ```
 
 This sends the questions to OpenAI for embeddings and may incur charges.
@@ -95,6 +97,6 @@ This sends the questions to OpenAI for embeddings and may incur charges.
 - `EmbeddingProvider`: use `OpenAIEmbeddingProvider` for online vectors or `HashingEmbeddingProvider` for offline tests.
 - `SQLiteIndex`: persist documents, chunks, relationships, and embeddings; build an in-memory ChromaDB collection for retrieval.
 - `TraversalConfig`: tune node, depth, bridge, direction, inclusion, and token limits.
-- `ContextWeave`: orchestration entry point; graph expansion completes for all candidates before document reranking starts.
+- `Isthmus`: orchestration entry point; graph expansion completes for all candidates before document reranking starts.
 
 Structure extraction is best-effort: PDF heading hierarchy and table layout are not reconstructed, and OCR is not included.

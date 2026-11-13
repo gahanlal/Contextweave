@@ -1,5 +1,5 @@
-from contextweave.graph import AdaptiveGraphRetriever, TraversalConfig
-from contextweave.models import (
+from isthmus.graph import AdaptiveGraphRetriever, TraversalConfig
+from isthmus.models import (
     Chunk,
     QueryPlan,
     QueryRequirement,
