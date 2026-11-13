@@ -27,11 +27,24 @@ git clone https://github.com/gahanlal/Contextweave.git
 cd Contextweave
 py -3.14 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev,ui]"
+python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 python -m pytest
 streamlit run frontend\streamlit_app.py
 ```
+
+`requirements.txt` installs the core dependencies plus the development and UI
+extras:
+
+- Core: `openai`, `anthropic`, `pypdf`, `python-dotenv`, `python-docx`,
+  `python-pptx`, `openpyxl`, `fastapi`, `uvicorn`, `python-multipart`,
+  `chromadb`.
+- Development: `pytest`.
+- UI: `streamlit`.
+
+The optional benchmark runner also needs `huggingface-hub`; install it with
+`python -m pip install -e ".[evaluation]"`. Version constraints are maintained
+in [`pyproject.toml`](pyproject.toml).
 
 Set `ISTHMUS_EMBEDDING_MODEL` and `ISTHMUS_EMBEDDING_API_KEY` in `.env`, then
 create a sector and upload documents in the UI. For generated answers, also
