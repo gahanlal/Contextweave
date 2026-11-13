@@ -23,8 +23,8 @@ not guarantee that an answer is correct.
 Requires Python 3.11 or newer. From PowerShell:
 
 ```powershell
-git clone https://github.com/gahanlal/Contextweave.git
-cd Contextweave
+git clone https://github.com/gahanlal/isthmus-rag.git
+cd isthmus-rag
 py -3.14 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
