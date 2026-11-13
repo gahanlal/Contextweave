@@ -123,3 +123,23 @@ def test_node_limit_is_respected():
     retriever.config = TraversalConfig(max_nodes=3, max_depth=10, max_forward=20, max_backward=20)
     evidence = retriever.retrieve("doc", plan, hits)
     assert len(evidence.visited_chunk_ids) <= 3
+
+
+def test_similarity_is_computed_once_per_chunk_per_retrieval():
+    scores = [("seed", 0.95), ("bridge", 0.2), ("answer", 0.85)]
+    retriever, plan, hits = setup_graph(
+        scores,
+        sequential_edges(["seed", "bridge", "answer"]),
+    )
+    original_similarity = retriever.similarity
+    calls = {}
+
+    def counted_similarity(query, chunk):
+        calls[chunk.id] = calls.get(chunk.id, 0) + 1
+        return original_similarity(query, chunk)
+
+    retriever.similarity = counted_similarity
+    retriever.retrieve("doc", plan, hits)
+
+    assert calls
+    assert max(calls.values()) == 1

@@ -22,6 +22,11 @@ class Document:
 
 
 @dataclass(frozen=True, slots=True)
+class Sector:
+    id: str
+
+
+@dataclass(frozen=True, slots=True)
 class Chunk:
     id: str
     document_id: str
@@ -117,3 +122,4 @@ class RetrievalResult:
     context: tuple[Chunk, ...]
     evidence_coverage: dict[str, str]
     expansion_order: tuple[str, ...]
+    fallback_used: bool = False

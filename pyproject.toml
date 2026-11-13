@@ -7,13 +7,27 @@ name = "contextweave"
 version = "0.1.0"
 description = "An inspectable adaptive graph retrieval research POC"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "openai>=1.0",
+    "pypdf>=5.0",
+    "python-dotenv>=1.0",
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    "openpyxl>=3.1",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
+    "chromadb>=1.5,<2",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+ui = ["streamlit>=1.35"]
 
 [project.scripts]
 contextweave-demo = "contextweave.demo:main"
+contextweave = "contextweave.cli:main"
+contextweave-evaluate = "contextweave.evaluation.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

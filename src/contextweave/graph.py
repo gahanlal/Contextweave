@@ -68,6 +68,7 @@ class AdaptiveGraphRetriever:
         document_id: str,
         query_plan: QueryPlan,
         seed_hits: Iterable[SearchHit],
+        similarity: Callable[[str, Chunk], float] | None = None,
     ) -> EvidencePackage:
         document_chunks = self.chunks_by_document.get(document_id, {})
         seeds = []
@@ -96,6 +97,7 @@ class AdaptiveGraphRetriever:
             )
 
         query = query_plan.original_query
+        similarity_for_query = similarity or self.similarity
         relevant_edges = self._eligible_relationships(query_plan)
         queue: deque[_State] = deque()
         for seed in seeds:
@@ -124,7 +126,10 @@ class AdaptiveGraphRetriever:
                 continue
             expanded_states.add(state_key)
             chunk = document_chunks[state.chunk_id]
-            score = similarities.setdefault(state.chunk_id, self.similarity(query, chunk))
+            score = similarities.get(state.chunk_id)
+            if score is None:
+                score = similarity_for_query(query, chunk)
+                similarities[state.chunk_id] = score
             if state.chunk_id not in visited_set:
                 visited_set.add(state.chunk_id)
                 visited.append(state.chunk_id)
@@ -162,7 +167,10 @@ class AdaptiveGraphRetriever:
                     if direction_counts[edge.relationship_type] >= self._direction_limit(edge.relationship_type):
                         continue
                     direction_counts[edge.relationship_type] += 1
-                next_score = similarities.setdefault(next_id, self.similarity(query, next_chunk))
+                next_score = similarities.get(next_id)
+                if next_score is None:
+                    next_score = similarity_for_query(query, next_chunk)
+                    similarities[next_id] = next_score
                 is_qualifies = edge.relationship_type == RelationshipType.QUALIFIES
                 low_streak = 0 if next_score >= self.config.include_threshold else state.low_similarity_streak + 1
                 can_traverse = (

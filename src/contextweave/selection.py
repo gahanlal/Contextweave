@@ -75,6 +75,7 @@ def rerank_documents(
     target_documents: int = 3,
     max_documents: int = 5,
     minimum_marginal_score: float = 0.18,
+    relevance_tie_tolerance: float = 0.02,
 ) -> tuple[tuple[str, ...], tuple[DocumentAssessment, ...]]:
     """Select complete document evidence packages after all expansions are ready."""
     package_list = list(packages)
@@ -108,8 +109,13 @@ def rerank_documents(
             marginal_coverage = len(new_coverage) / max(1, len(all_requirements))
             score = 0.55 * marginal_coverage + 0.45 * relevance[document_id]
             ranked_candidates.append((score, document_id, new_coverage, marginal_coverage))
-        ranked_candidates.sort(key=lambda item: (-item[0], item[1]))
-        score, document_id, new_coverage, marginal_coverage = ranked_candidates[0]
+        best_score = max(candidate[0] for candidate in ranked_candidates)
+        near_ties = [
+            candidate
+            for candidate in ranked_candidates
+            if best_score - candidate[0] <= relevance_tie_tolerance
+        ]
+        score, document_id, new_coverage, marginal_coverage = near_ties[0]
         if selected and not new_coverage and (
             covered >= all_requirements or score < minimum_marginal_score
         ):
