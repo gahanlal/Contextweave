@@ -1,6 +1,21 @@
 # Isthmus
 
-Isthmus is a research POC for testing adaptive, document-local graph retrieval. Its core hypothesis is that bounded expansion through a document's chunk graph can recover useful context across low-similarity bridges, while reranking complete document evidence packages can favor complementary evidence over redundant high-scoring chunks.
+Isthmus is a research proof of concept for testing whether adaptive, document-local graph retrieval can give a retrieval-augmented generation (RAG) system more complete evidence than conventional retrieval.
+
+## What this project is attempting
+
+Conventional RAG often selects the top matching chunks and sends them directly to a language model. Those chunks may contain the main rule but miss an exception, qualification, or related passage elsewhere in the document. Adding a fixed window of neighboring chunks can recover some context, but may also include irrelevant material and still miss evidence beyond that window.
+
+Isthmus investigates a different approach:
+
+1. Search the whole corpus for matching chunks, then use those matches to identify relevant sectors and candidate documents.
+2. Expand independently within each candidate document's chunk graph. The traversal can pass through a low-similarity bridge without including it, potentially finding relevant context beyond it.
+3. Only after every candidate has been expanded, compare complete document evidence packages. Prefer documents that add useful, complementary evidence rather than selecting solely by individual chunk similarity.
+4. Assemble a bounded context with source locations and use it to generate an answer with citations.
+
+For example, a policy's main rule and its exception might be separated by an unrelated paragraph. The experiment asks whether bounded graph expansion can find both without blindly including the intermediate paragraph. Document-level reranking then asks whether a second document contributes a distinct qualification or merely repeats the first.
+
+The goal is to compare evidence completeness, document selection, context size, and latency against top-k and fixed-window retrieval—not to assume that more graph traversal is always better. The project is experimental: approximate vector search, traversal limits, and reranking can miss evidence, and citations are not proof that an answer is correct.
 
 ## Current implementation
 
