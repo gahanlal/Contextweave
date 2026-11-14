@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "label_provenance": "Assistant-authored expected facts and source page pointers, checked against the cited PDFs but not independently reviewed.",
+  "cases": [
+    {
+      "id": "apple",
+      "question": "According to the 2023 Q3 Apple filing, what were net sales and net income for the three months ended July 1, 2023?",
+      "required_facts": [
+        "Net sales were $81,797 million.",
+        "Net income was $19,881 million.",
+        "The three-month period ended July 1, 2023."
+      ],
+      "evidence_pages": [
+        {
+          "path": "sec-10-q/data/v1/docs/2023 Q3 AAPL.pdf",
+          "page": 4
+        },
+        {
+          "path": "sec-10-q/data/v1/docs/2023 Q3 AAPL.pdf",
+          "page": 10
+        }
+      ]
+    },
+    {
+      "id": "amazon",
+      "question": "According to the 2023 Q3 Amazon filing, what were net sales and operating income for the three months ended September 30, 2023?",
+      "required_facts": [
+        "Net sales were $143,083 million.",
+        "Operating income was $11,188 million.",
+        "The three-month period ended September 30, 2023."
+      ],
+      "evidence_pages": [
+        {
+          "path": "sec-10-q/data/v1/docs/2023 Q3 AMZN.pdf",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "comparison",
+      "question": "Compare the three-month net sales reported in the filings labeled 2023 Q3 for Apple and Amazon.",
+      "required_facts": [
+        "Apple net sales were $81,797 million for the period ending July 1, 2023.",
+        "Amazon net sales were $143,083 million for the period ending September 30, 2023.",
+        "The reporting periods end on different dates."
+      ],
+      "evidence_pages": [
+        {
+          "path": "sec-10-q/data/v1/docs/2023 Q3 AAPL.pdf",
+          "page": 4
+        },
+        {
+          "path": "sec-10-q/data/v1/docs/2023 Q3 AAPL.pdf",
+          "page": 10
+        },
+        {
+          "path": "sec-10-q/data/v1/docs/2023 Q3 AMZN.pdf",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "aviation-cause",
+      "question": "What did the NTSB determine was the probable cause of the Piper PA-22-150 accident near Tallahassee?",
+      "required_facts": [
+        "The pilot misjudged obstacle clearance on final approach."
+      ],
+      "evidence_pages": [
+        {
+          "path": "ntsb-aviation-incident-accident-reports/data/v1/docs/20071229X02007.pdf",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "aviation-weather",
+      "question": "What visibility and ceiling were reported for the Reims F172M accident near Chevroux, France?",
+      "required_facts": [
+        "Visibility was 0.7 mile.",
+        "The ceiling was broken at 200 feet above ground level."
+      ],
+      "evidence_pages": [
+        {
+          "path": "ntsb-aviation-incident-accident-reports/data/v1/docs/20080102X00002.pdf",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "trial-size",
+      "question": "How many participants were planned for the single-center oral chronic graft-versus-host disease study using mesenchymal stem cell dressings?",
+      "required_facts": [
+        "The planned enrollment was 38 patients."
+      ],
+      "evidence_pages": [
+        {
+          "path": "nih-clinical-trial-protocols/data/v1/docs/NCT06149832_Prot_000.pdf",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "trial-vr",
+      "question": "For the spinal-injury virtual-reality rehabilitation feasibility study, what was the intended intervention schedule and target recruitment?",
+      "required_facts": [
+        "Sessions were up to 30 minutes.",
+        "The schedule was at least three times weekly for 12 weeks.",
+        "Target recruitment was 24 participants."
+      ],
+      "evidence_pages": [
+        {
+          "path": "nih-clinical-trial-protocols/data/v1/docs/NCT06154122_Prot_000.pdf",
+          "page": 2
+        },
+        {
+          "path": "nih-clinical-trial-protocols/data/v1/docs/NCT06154122_Prot_000.pdf",
+          "page": 3
+        }
+      ]
+    }
+  ]
+}

@@ -6,7 +6,12 @@ import argparse
 import json
 from pathlib import Path
 
-from docugami_benchmark import DeterministicPlanner, LocalMiniLM, TokenAwareMiniLM, budget_chunks
+from docugami_benchmark import (
+    DeterministicPlanner,
+    LocalMiniLM,
+    TokenAwareMiniLM,
+    match_context_words,
+)
 from isthmus.evaluation.baselines import run_baselines
 from isthmus.index import SQLiteIndex
 from isthmus.pipeline import Isthmus, PipelineConfig
@@ -38,14 +43,20 @@ def main() -> None:
         pipeline = Isthmus(index, config, query_planner=DeterministicPlanner())
         for case_id, query in CASES:
             methods = []
-            for result in run_baselines(index, query, config, pipeline):
-                if result.name not in ("A: top-k", "E: document reranking"):
-                    continue
-                chunks = budget_chunks(result.chunks, config.global_token_budget)
+            baselines = {result.name: result for result in run_baselines(index, query, config, pipeline)}
+            top_k, isthmus = match_context_words(
+                baselines["A: top-k"].chunks,
+                baselines["E: document reranking"].chunks,
+                config.global_token_budget,
+            )
+            for name, result, chunks in (
+                ("A: top-k (size-matched)", baselines["A: top-k"], top_k),
+                ("E: document reranking (size-matched)", baselines["E: document reranking"], isthmus),
+            ):
                 methods.append({
-                    "method": result.name,
+                    "method": name,
                     "latency_ms": result.latency_ms,
-                    "estimated_words": sum(chunk.token_count for chunk in chunks),
+                    "context_words": sum(chunk.token_count for chunk in chunks),
                     "chunks": [
                         {
                             "document": index.documents[chunk.document_id].title,
@@ -59,7 +70,16 @@ def main() -> None:
             cases.append({"id": case_id, "question": query, "methods": methods})
             print(f"Retrieved {case_id}", flush=True)
     args.report.write_text(
-        json.dumps({"embedding_provider": provider.provider_id, "cases": cases}, indent=2, ensure_ascii=False),
+        json.dumps(
+            {
+                "embedding_provider": provider.provider_id,
+                "document_selection_policy": config.document_selection_policy,
+                "context_matching": "Both methods use the smaller available per-question whitespace-word count.",
+                "cases": cases,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
 

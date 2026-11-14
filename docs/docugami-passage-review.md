@@ -1,6 +1,14 @@
-# Assistant-authored passage review
+# Passage-level labels and answer QA
 
-## Method
+The current answer-quality pilot is the
+[matched-context LLM QA evaluation](docugami-evaluation.md#matched-context-llm-answer-qa-pilot).
+The retrieval-only checks below predate that pilot and use natural, unequal
+context sizes; they are retained as historical observations, not controlled
+evidence that one method is better.
+
+## Historical retrieval-only checks (unequal contexts)
+
+### Method
 
 Seven questions were written from the source PDFs before inspecting retrieval
 results. The expected answers and physical PDF page numbers below were checked
@@ -10,11 +18,12 @@ count. Labels and judgments were **not independently human-reviewed**.
 
 Both methods searched the complete 77-document original MiniLM index described
 in the [experiment report](docugami-evaluation.md), using the current selection
-code, deterministic planner and 4,500-word estimated budget. This is the
+code, deterministic planner and 4,500-word maximum estimated budget. This is the
 **legacy word-chunked index**, not the later token-aware index. Top-k and the
-full document-reranked pipeline received the same queries. An answer is
-complete only when all requested facts are supported somewhere in the returned
-context; partial means at least one requested fact is missing.
+full document-reranked pipeline received the same queries, but their returned
+contexts were not truncated to equal sizes. An answer is complete only when
+all requested facts are supported somewhere in the returned context; partial
+means at least one requested fact is missing.
 
 ## Questions, answers and observations
 
@@ -62,11 +71,39 @@ reranked VR context still missed the recruitment figure.
 
 The set is small, hand-selected and biased toward facts that could be verified
 in the PDFs; it does not estimate general accuracy. It includes finance,
-aviation and clinical-trial protocols but no federal-report question.
-No answer model was run: these are **retrieval evidence judgments**, not
-generated-answer quality, citation correctness, medical conclusions or
-performance on independently held-out questions. Some PDF text and tables are
-poorly extracted, and the original embedding model truncated long chunks.
+aviation and clinical-trial protocols but no federal-report question. No answer
+model was run for these historical checks: they are **retrieval evidence
+judgments**, not generated-answer quality, citation correctness, medical
+conclusions or performance on independently held-out questions. Some PDF text
+and tables are poorly extracted, and the original embedding model truncated
+long chunks.
+
+## Current matched-context answer QA pilot
+
+The current seven-question labels are structured in
+[`evaluation/docugami_passage_labels.json`](../evaluation/docugami_passage_labels.json).
+They record required facts and evidence pages checked against the source PDFs.
+Top-k, fixed-target and marginal-coverage answer contexts were truncated to
+the same whitespace-word count per question before answer generation.
+
+| Retrieval arm | Correctness (0–4) | Completeness (0–4) | Citation support (0–4) |
+|---|---:|---:|---:|
+| Top-k | 3.00 | 3.43 | 3.00 |
+| Fixed target | 4.00 | 4.00 | 4.00 |
+| Marginal coverage | 4.00 | 4.00 | 4.00 |
+
+Fixed-target and marginal-coverage scores tied on all seven questions. Each
+scored above top-k on three questions and tied on four. GPT-4o-mini generated
+and judged answers; its scores are not independent human assessments. Labels
+were assistant-authored and not independently reviewed, and the sample is too
+small to establish a general answer-quality gain. It also contains no dedicated
+exception-query set, so it does not measure the effect of `QUALIFIES` evidence
+inclusion.
+
+The API runner is
+[`evaluation/docugami_answer_qa.py`](../evaluation/docugami_answer_qa.py). The
+full methodology and document-pattern results are in the
+[experiment report](docugami-evaluation.md).
 
 ## Reproduce the retrieval
 

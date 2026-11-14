@@ -1,10 +1,14 @@
 import importlib.util
+import json
 from pathlib import Path
+import sys
 
 import numpy as np
 import pytest
 
 from isthmus.models import Chunk, SearchHit
+from isthmus.demo import build_demo
+from conftest import FakeEmbeddingProvider
 
 
 path = Path(__file__).resolve().parents[1] / "evaluation" / "docugami_benchmark.py"
@@ -16,6 +20,11 @@ comparator_spec = importlib.util.spec_from_file_location(
 )
 comparators = importlib.util.module_from_spec(comparator_spec)
 comparator_spec.loader.exec_module(comparators)
+sys.path.insert(0, str(path.parent))
+answer_qa_path = path.with_name("docugami_answer_qa.py")
+answer_qa_spec = importlib.util.spec_from_file_location("docugami_answer_qa", answer_qa_path)
+answer_qa = importlib.util.module_from_spec(answer_qa_spec)
+answer_qa_spec.loader.exec_module(answer_qa)
 
 
 def test_document_metrics_include_missing_and_extra_sources():
@@ -38,6 +47,101 @@ def test_comparison_applies_the_same_word_budget_to_baselines():
         Chunk("c", "c", "sector", "three", 3, token_count=2),
     ]
     assert [chunk.id for chunk in benchmark.budget_chunks(chunks, 6)] == ["a", "c"]
+
+
+def test_size_matching_truncates_all_contexts_to_equal_word_counts():
+    top_k = [
+        Chunk("a", "doc-a", "sector", "one two three four", 1, token_count=4),
+    ]
+    reranked = [
+        Chunk("b", "doc-b", "sector", "five six", 1, token_count=2),
+    ]
+    third = [
+        Chunk("c", "doc-c", "sector", "seven eight nine", 1, token_count=3),
+    ]
+
+    matched = benchmark.match_context_words_many(
+        {"top_k": top_k, "reranked": reranked, "third": third},
+        4,
+    )
+
+    assert {
+        arm: sum(chunk.token_count for chunk in chunks)
+        for arm, chunks in matched.items()
+    } == {"top_k": 2, "reranked": 2, "third": 2}
+    assert matched["top_k"][0].content == "one two"
+    assert matched["reranked"][0].content == "five six"
+
+
+def test_passage_labels_include_page_level_facts():
+    labels_path = path.with_name("docugami_passage_labels.json")
+    labels = answer_qa.load_passage_labels(labels_path)
+
+    assert len(labels) == 7
+    assert all(case["required_facts"] and case["evidence_pages"] for case in labels)
+    assert all(
+        isinstance(reference["page"], int) and reference["path"].endswith(".pdf")
+        for case in labels
+        for reference in case["evidence_pages"]
+    )
+
+
+def test_answer_qa_summary_averages_blinded_judge_scores_by_arm():
+    cases = [
+        {
+            "arms": {
+                "top_k": {"error": None, "citation_format_valid": True},
+                "fixed_target": {"error": None, "citation_format_valid": True},
+                "marginal_coverage": {"error": None, "citation_format_valid": True},
+            },
+            "judge": {
+                "scores": {
+                    "top_k": {"correctness": 2, "completeness": 1, "citation_support": 3},
+                    "fixed_target": {"correctness": 3, "completeness": 3, "citation_support": 3},
+                    "marginal_coverage": {"correctness": 4, "completeness": 3, "citation_support": 4},
+                },
+            },
+        }
+    ]
+
+    summary = answer_qa._summary(cases)
+
+    assert summary["marginal_coverage"] == {
+        "correctness": 4,
+        "completeness": 3,
+        "citation_support": 4,
+        "citation_format_failures": 0,
+    }
+    assert summary["pairwise_score_outcomes"]["fixed_target_vs_top_k"] == {
+        "fixed_target_wins": 1,
+        "top_k_wins": 0,
+        "ties": 0,
+    }
+    assert summary["pairwise_score_outcomes"]["fixed_target_vs_marginal_coverage"] == {
+        "fixed_target_wins": 0,
+        "marginal_coverage_wins": 1,
+        "ties": 0,
+    }
+
+
+def test_answer_qa_keeps_uncited_drafts_for_grounding_judgment():
+    class FakeProvider:
+        def generate(self, prompt):
+            assert json.loads(prompt)["evidence"]
+            return '{"answer":"The policy reimburses the expense."}'
+
+    pipeline = build_demo(FakeEmbeddingProvider())
+    result = pipeline.query("What are the travel reimbursement rules?")
+
+    answer = answer_qa._generate_qa_answer(
+        result,
+        pipeline.index.documents,
+        FakeProvider(),
+    )
+
+    assert answer["text"] == "The policy reimburses the expense."
+    assert answer["citation_format_valid"] is False
+    assert answer["cited_evidence"] == []
 
 
 def test_hybrid_search_combines_lexical_and_dense_candidates():

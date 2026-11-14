@@ -133,40 +133,54 @@ authentication; do not expose it publicly.
 
 ## Evaluation
 
-The latest retrieval benchmark used a token-aware local MiniLM index over 77
-PDFs from [Docugami KG-RAG-datasets](https://github.com/docugami/KG-RAG-datasets).
-It evaluated 171 eligible SEC questions (195 total). Metrics are
-macro-averaged per-question document-pattern scores: retrieved document
-filenames are matched against the dataset's `Source Docs` filename patterns.
-It measures document retrieval, not passage support or answer correctness.
+The matched-context retrieval evaluation used a token-aware local MiniLM index
+over 77 PDFs from [Docugami KG-RAG-datasets](https://github.com/docugami/KG-RAG-datasets).
+It evaluated 171 eligible SEC questions (195 total). Document-pattern precision,
+recall and F1 are macro-averaged per question against the dataset's `Source Docs`
+filename patterns; they measure document retrieval, not passage support.
 
-| Retrieval method | Precision | Recall | F1 | Median latency |
-|---|---:|---:|---:|---:|
-| Dense top-k | 29.3% | **98.2%** | 39.6% | 48.1 ms |
-| Adaptive graph | 41.8% | 81.3% | **49.2%** | 94.6 ms |
-| Heuristic sector routing + graph | 41.8% | 81.3% | **49.2%** | 92.0 ms |
-| Full pipeline, heuristic sector selection | **42.9%** | 71.2% | 47.9% | 126.5 ms |
-| Full pipeline, GPT-4o-mini sector selection | 42.9% | 71.2% | 47.9% | 1,491.3 ms |
+For each question, top-k and document reranking were clipped to the same
+whitespace-word count (the smaller available context). This controls for context
+size within each policy comparison:
 
-Document-pattern F1 is the harmonic mean of document-set precision and recall
-for each question, then macro-averaged across the 171 eligible questions. The
-LLM selector made 171 successful calls but did not meaningfully improve these
-retrieval scores; it added about 1.36 seconds to median latency. Accordingly,
-LLM sector selection is opt-in, not the default.
+| Selection policy | Method | Precision | Recall | F1 | Mean context words | Median latency |
+|---|---|---:|---:|---:|---:|---:|
+| Fixed target | Top-k, size-matched | 29.2% | **98.2%** | 39.5% | 4,164 | 45.3 ms |
+| Fixed target | Document reranking, size-matched | **43.7%** | 69.7% | **47.9%** | 4,164 | 116.5 ms |
+| Marginal coverage | Top-k, size-matched | 37.2% | **94.0%** | **47.4%** | 1,811 | 49.7 ms |
+| Marginal coverage | Document reranking, size-matched | **50.0%** | 32.7% | 36.0% | 1,811 | 112.6 ms |
 
-### Separate seven-question passage review
+At equal context size, fixed-target reranking gains **8.4 F1 points** over
+top-k; its F1 gain is not explained only by returning less text. Under the new
+marginal-coverage policy, document reranking trails size-matched top-k by
+**11.4 F1 points**, with substantially lower recall. The policy comparison is
+therefore not a blanket KPI improvement. Thresholds remain hand-set, and these
+document labels still do not measure passage entailment.
 
-A small manual review on the token-aware index found complete retrieved
-evidence for **6/7** questions with the full pipeline and **5/7** with top-k.
-This passage-level check is separate from the document-pattern KPI table: the
-questions and judgments were assistant-authored, not independently reviewed,
-and are too few to estimate general performance. The benchmark has no gold
-answers or claim-level citation labels, so it does not measure answer
-correctness or citation accuracy. Latencies are single-run measurements, not
-production benchmarks.
+### Seven-question LLM answer QA pilot
+
+The answer model and a blinded judge (both GPT-4o-mini) evaluated top-k,
+fixed-target and marginal-coverage answers using exactly the same per-question
+word count. Reference facts and PDF page pointers are in
+[`evaluation/docugami_passage_labels.json`](evaluation/docugami_passage_labels.json).
+
+| Retrieval arm | Correctness (0–4) | Completeness (0–4) | Citation support (0–4) |
+|---|---:|---:|---:|
+| Top-k | 3.00 | 3.43 | 3.00 |
+| Fixed target | 4.00 | 4.00 | 4.00 |
+| Marginal coverage | 4.00 | 4.00 | 4.00 |
+
+Fixed-target and marginal coverage tied on these rubric scores for all seven
+questions. Each pipeline arm scored better than top-k on three questions and
+tied on four. This is a small, assistant-authored pilot, not independent
+validation: the labels were checked against cited PDF pages but not
+independently reviewed, and the same model generated and judged answers. It
+does not establish general answer-quality improvement or the impact of
+`QUALIFIES` links; the seven questions are not a dedicated exception-query set.
+The current qualifier extractor is heuristic.
 
 See the [full benchmark and methodology](docs/docugami-evaluation.md), the
-[passage review](docs/docugami-passage-review.md), and
+[passage-level QA review](docs/docugami-passage-review.md), and
 [ingestion/index compatibility notes](docs/ingestion.md).
 
 ## Tests

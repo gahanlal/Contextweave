@@ -85,7 +85,7 @@ execution differ between implementations.
   were not measured. These results cannot establish whether an answer is
   correct or whether a citation supports its claim.
 
-## Re-indexed token-aware comparison
+## Historical token-aware comparison (unmatched context sizes)
 
 After the historical run, the evaluation adapter started splitting chunks
 using the actual MiniLM tokenizer and 256-token limit. The new index has the
@@ -93,12 +93,14 @@ same 77 PDFs and 171 eligible SEC questions, but
 9,456 chunks. Directly counting every indexed chunk with the untruncated
 tokenizer found a maximum of 256 tokens and **zero over the limit**.
 
-The following are macro document-pattern scores from the latest local rerun
-(November 14, 2026), over the same 171 eligible questions. The first run used
-the token-aware index and included all local comparators. A separate A/B run
-changed only the full pipeline's sector selector to the revised GPT-4o-mini
-prompt; it kept the query planner deterministic. That run completed 171 selector
-requests with zero fallbacks.
+The following are macro document-pattern scores from an earlier local rerun
+(November 14, 2026), over the same 171 eligible questions. These natural-output
+contexts were not size-matched, so the table is retained for historical
+reference and must not be used as a controlled head-to-head comparison. The
+first run used the token-aware index and included all local comparators. A
+separate A/B run changed only the full pipeline's sector selector to the
+revised GPT-4o-mini prompt; it kept the query planner deterministic. That run
+completed 171 selector requests with zero fallbacks.
 
 | Retrieval method | Precision | Recall | F1 | Mean context words | Median latency ms |
 |---|---:|---:|---:|---:|---:|
@@ -127,13 +129,69 @@ Latencies are single-machine, single-run measurements; the GPT-4o-mini number
 includes the live sector-selection API call. They are not controlled production
 latency estimates.
 
-For a complementary content-level check, see the
-[assistant-authored passage review](docugami-passage-review.md). Further work
-still requires independently reviewed passage labels, answer/citation review,
-a representative corpus and repeated end-to-end measurements. The labeled
-benchmark has no reference answers or claim-level citation labels, so it does
-not produce an answer-quality KPI; the live selector run also did not generate
-answers.
+This earlier retrieval-only run did not generate answers. Its word counts and
+metrics are historical, not the matched-context results below.
+
+## Matched-context document-pattern comparison
+
+The matched evaluation uses the same token-aware index, 171 eligible questions,
+and per-question source-document labels. For each policy, the top-k and
+document-reranking outputs were truncated to the exact whitespace-word count of
+the smaller context for that question. Thus methods have equal total words
+within each pair, although the fixed-target pair and marginal-coverage pair
+have different mean budgets. The word counts are whitespace-delimited words,
+not the answer model's tokenizer tokens.
+
+| Selection policy | Method | Precision | Recall | F1 | Mean context words | Median latency ms |
+|---|---|---:|---:|---:|---:|---:|
+| Fixed target | Top-k, size-matched | 29.23 | 98.25 | 39.54 | 4,163.56 | 45.28 |
+| Fixed target | Document reranking, size-matched | 43.66 | 69.74 | 47.93 | 4,163.56 | 116.47 |
+| Marginal coverage | Top-k, size-matched | 37.25 | 94.01 | 47.45 | 1,811.41 | 49.75 |
+| Marginal coverage | Document reranking, size-matched | 50.00 | 32.75 | 36.02 | 1,811.41 | 112.63 |
+
+Fixed-target document reranking is **+8.39 F1 percentage points** over
+size-matched top-k. Marginal-coverage document reranking is **-11.42 points**
+versus its matched top-k baseline: precision rises, but recall falls sharply.
+This shows the fixed-target F1 improvement is not only a consequence of
+returning fewer words, but the newer marginal-coverage selection policy does
+not improve this document-pattern KPI over size-matched top-k.
+
+These are still coarse filename-pattern metrics, not passage-level relevance
+or answer correctness. Similarity and traversal thresholds remain hand-set;
+this comparison does not calibrate them.
+
+## Matched-context LLM answer QA pilot
+
+Seven assistant-authored question/fact/source-page labels in
+[`evaluation/docugami_passage_labels.json`](../evaluation/docugami_passage_labels.json)
+were used to compare top-k, fixed-target and marginal-coverage answers. For
+each question, all three arms received exactly the same whitespace-word count.
+GPT-4o-mini generated the answers and the same model judged them against the
+required facts and labeled source pages. Citation identifiers and cited
+retrieved passages were also provided to the judge; the application's strict
+citation-assessment gate was not run. The report is produced by
+[`evaluation/docugami_answer_qa.py`](../evaluation/docugami_answer_qa.py).
+
+| Retrieval arm | Correctness (0–4) | Completeness (0–4) | Citation support (0–4) |
+|---|---:|---:|---:|
+| Top-k | 3.00 | 3.43 | 3.00 |
+| Fixed target | 4.00 | 4.00 | 4.00 |
+| Marginal coverage | 4.00 | 4.00 | 4.00 |
+
+By summed rubric scores, fixed-target versus top-k had 3 wins, 0 losses and 4
+ties; marginal-coverage versus top-k had the same; fixed-target versus
+marginal-coverage tied on all 7 questions. There were no answer-generation or
+citation-format failures in this run.
+
+This is a small, model-judged pilot, not independent validation: labels were
+checked against the cited PDF pages but were not independently reviewed, and
+the answer and judge models are the same. It suggests answer-quality
+improvement over top-k on this sample, but does not establish a general
+improvement, statistically reliable effect, or the impact of `QUALIFIES`
+edges. The questions are not a dedicated exception-query test set, and the
+heuristic qualifier extractor needs separate evaluation. See the
+[passage-level QA review](docugami-passage-review.md) for prior retrieval-only
+checks and limitations.
 
 ## Reproduce
 
@@ -161,9 +219,9 @@ uses an optional local model adapter only for evaluation; it does not change the
 application's selected embedding provider. The benchmark accepts either
 `--document-selection-policy marginal_coverage` or
 `--document-selection-policy fixed_target` to compare the current
-coverage-driven default with the prior target-oriented policy. The token-aware
-scores above are historical results from the target-oriented policy and are
-not measurements of the new default.
+coverage-driven default with the prior target-oriented policy. Its
+size-matched top-k and document-reranking rows make the context comparison
+within each policy explicit.
 
 To evaluate the production LLM sector selector on the full-pipeline baseline,
 add `--llm-sector-selection`. This makes one GPT-4o-mini routing request for

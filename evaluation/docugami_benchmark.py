@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from dataclasses import replace
 import fnmatch
 import hashlib
 import json
@@ -63,7 +64,6 @@ class TokenAwareMiniLM(LocalMiniLM):
     def count_tokens(self, text: str) -> int:
         return len(self.tokenizer.encode(text).ids)
 
-
 class DeterministicPlanner:
     def plan(self, query: str):
         return understand_query(query)
@@ -99,6 +99,60 @@ def budget_chunks(chunks, budget):
             selected.append(chunk)
             used += chunk.token_count
     return tuple(selected)
+
+
+def budget_chunks_exact_words(chunks, budget):
+    if budget < 0:
+        raise ValueError("Word budget must not be negative.")
+    selected = []
+    used = 0
+    for chunk in chunks:
+        remaining = budget - used
+        if remaining <= 0:
+            break
+        words = chunk.content.split()
+        if not words:
+            continue
+        if len(words) <= remaining:
+            selected.append(replace(chunk, token_count=len(words)))
+            used += len(words)
+            continue
+        content = " ".join(words[:remaining])
+        selected.append(replace(chunk, content=content, token_count=remaining))
+        break
+    return tuple(selected)
+
+
+def match_context_words(first, second, budget):
+    matched = match_context_words_many(
+        {"first": first, "second": second},
+        budget,
+    )
+    return matched["first"], matched["second"]
+
+
+def match_context_words_many(contexts, budget):
+    if not contexts:
+        raise ValueError("At least one context is required for size matching.")
+    bounded = {
+        name: budget_chunks_exact_words(chunks, budget)
+        for name, chunks in contexts.items()
+    }
+    target = min(sum(chunk.token_count for chunk in chunks) for chunks in bounded.values())
+    while target >= 0:
+        matched = {
+            name: budget_chunks_exact_words(chunks, target)
+            for name, chunks in bounded.items()
+        }
+        counts = {
+            name: sum(chunk.token_count for chunk in chunks)
+            for name, chunks in matched.items()
+        }
+        if len(set(counts.values())) == 1:
+            return matched
+        next_target = min(counts.values())
+        target = next_target if next_target < target else target - 1
+    raise ValueError("Could not produce exactly size-matched contexts.")
 
 
 def document_metrics(expected, actual):
@@ -240,8 +294,36 @@ def main() -> None:
                     "baseline": baseline.name,
                     "retrieved_files": [index.documents[doc].title + ".pdf" for doc in actual],
                     "chunks": len(chunks),
-                    "estimated_words": sum(chunk.token_count for chunk in chunks),
+                    "context_words": sum(chunk.token_count for chunk in chunks),
+                    "context_size_matched": False,
                     "latency_ms": baseline.latency_ms,
+                    **document_metrics(expected, actual),
+                })
+            baseline_by_name = {baseline.name: baseline for baseline in baselines}
+            matched_top_k, matched_reranked = match_context_words(
+                baseline_by_name["A: top-k"].chunks,
+                baseline_by_name["E: document reranking"].chunks,
+                config.global_token_budget,
+            )
+            for baseline_name, chunks in (
+                ("A: top-k (size-matched)", matched_top_k),
+                ("E: document reranking (size-matched)", matched_reranked),
+            ):
+                actual = list(dict.fromkeys(chunk.document_id for chunk in chunks))
+                results.append({
+                    "case": number,
+                    "question": case["Question"],
+                    "question_type": case["Question Type"],
+                    "source_pattern": pattern,
+                    "expected_files": matching,
+                    "baseline": baseline_name,
+                    "retrieved_files": [index.documents[doc].title + ".pdf" for doc in actual],
+                    "chunks": len(chunks),
+                    "context_words": sum(chunk.token_count for chunk in chunks),
+                    "context_size_matched": True,
+                    "latency_ms": baseline_by_name[
+                        "A: top-k" if baseline_name.startswith("A:") else "E: document reranking"
+                    ].latency_ms,
                     **document_metrics(expected, actual),
                 })
             print(f"Evaluated case {number}/{len(cases)}", flush=True)
@@ -253,7 +335,15 @@ def main() -> None:
                 "cases": len(baseline_rows),
                 **{
                     key: statistics.mean(row[key] for row in baseline_rows)
-                    for key in ("precision", "recall", "f1", "any_hit", "all_sources", "chunks", "estimated_words")
+                    for key in (
+                        "precision",
+                        "recall",
+                        "f1",
+                        "any_hit",
+                        "all_sources",
+                        "chunks",
+                        "context_words",
+                    )
                 },
                 "median_latency_ms": statistics.median(row["latency_ms"] for row in baseline_rows),
             }
@@ -281,6 +371,7 @@ def main() -> None:
             "indexed_files": indexed,
             "failed_files": failed,
             "source_cases": len(cases),
+            "eligible_cases": len(cases) - len(excluded),
             "excluded_cases": excluded,
             "summary": summary,
             "per_case": results,
