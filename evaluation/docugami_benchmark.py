@@ -129,6 +129,12 @@ def main() -> None:
         action="store_true",
         help="Use the live GPT-4o-mini sector selector for the full-pipeline baseline.",
     )
+    parser.add_argument(
+        "--document-selection-policy",
+        choices=("marginal_coverage", "fixed_target"),
+        default="marginal_coverage",
+        help="Choose the full-pipeline document selection policy.",
+    )
     args = parser.parse_args()
     root = args.data_dir.resolve()
     files = {
@@ -145,7 +151,9 @@ def main() -> None:
         raise ValueError("SEC filenames must be unique.")
 
     provider = LocalMiniLM() if args.legacy_chunking else TokenAwareMiniLM()
-    config = PipelineConfig()
+    config = PipelineConfig(
+        document_selection_policy=args.document_selection_policy,
+    )
     indexed = []
     failed = []
     results = []
@@ -257,6 +265,7 @@ def main() -> None:
             "sector_selection": (
                 "gpt-4o-mini" if args.llm_sector_selection else "deterministic"
             ),
+            "document_selection_policy": args.document_selection_policy,
             "sector_selection_requests": (
                 pipeline.sector_selector.requests
                 if isinstance(pipeline.sector_selector, MeasuredSectorSelector)

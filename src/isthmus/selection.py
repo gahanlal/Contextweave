@@ -4,7 +4,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable
 from heapq import nlargest, nsmallest
 import json
-from typing import Protocol
+from typing import Literal, Protocol
 
 from isthmus.models import (
     DocumentAssessment,
@@ -145,8 +145,14 @@ def rerank_documents(
     target_documents: int = 3,
     max_documents: int = 5,
     minimum_marginal_score: float = 0.18,
+    selection_policy: Literal["fixed_target", "marginal_coverage"] = "marginal_coverage",
+    minimum_marginal_coverage: float = 0.05,
 ) -> tuple[tuple[str, ...], tuple[DocumentAssessment, ...]]:
     """Select complete document evidence packages after all expansions are ready."""
+    if selection_policy not in {"fixed_target", "marginal_coverage"}:
+        raise ValueError(f"Unknown document selection policy: {selection_policy}")
+    if not 0.0 <= minimum_marginal_coverage <= 1.0:
+        raise ValueError("minimum_marginal_coverage must be between 0 and 1.")
     package_list = list(packages)
     if not package_list:
         return (), ()
@@ -187,11 +193,20 @@ def rerank_documents(
                 for requirement in all_requirements
             ) / max(1, len(all_requirements))
             score = 0.55 * marginal_coverage + 0.45 * relevance[document_id]
-            if selected and not new_coverage and (
-                len(selected) >= target_documents
-                or score < minimum_marginal_score
-            ):
-                continue
+            if selected and not new_coverage:
+                if (
+                    selection_policy == "marginal_coverage"
+                    and marginal_coverage < minimum_marginal_coverage
+                ):
+                    continue
+                if (
+                    selection_policy == "fixed_target"
+                    and (
+                        len(selected) >= target_documents
+                        or score < minimum_marginal_score
+                    )
+                ):
+                    continue
             ranked_candidates.append((score, document_id, new_coverage, marginal_coverage))
         if not ranked_candidates:
             break
@@ -214,7 +229,8 @@ def rerank_documents(
             selected=True,
             explanation=(
                 f"Selected with relevance {relevance[document_id]:.3f}; "
-                f"added {len(new_coverage)} previously uncovered requirement(s)."
+                f"added {len(new_coverage)} previously uncovered requirement(s) "
+                f"and {marginal_coverage:.3f} marginal coverage."
             ),
         )
     for document_id, package in package_by_id.items():

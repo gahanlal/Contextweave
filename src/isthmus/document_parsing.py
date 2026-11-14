@@ -15,7 +15,14 @@ from openpyxl import load_workbook
 from pptx import Presentation
 
 from isthmus.embeddings import EmbeddingProvider, token_limit
-from isthmus.ingestion import NoExtractableTextError, _require_sector, _source_identity, _split_text, parse_pdf_bytes
+from isthmus.ingestion import (
+    NoExtractableTextError,
+    _qualifies_relationships,
+    _require_sector,
+    _source_identity,
+    _split_text,
+    parse_pdf_bytes,
+)
 from isthmus.models import Chunk, Document, Relationship, RelationshipType
 
 
@@ -92,6 +99,7 @@ def parse_document_bytes(
             chunks.append(chunk)
     if not chunks:
         raise NoExtractableTextError(f"{path.name} contains no extractable text.")
+    relationships.extend(_qualifies_relationships(chunks))
     return document, tuple(chunks), tuple(relationships)
 
 

@@ -126,6 +126,57 @@ def test_pipeline_expands_bounded_fallback_candidates_when_evidence_is_incomplet
     assert result.evidence_coverage["exceptions"] == "sufficient"
 
 
+def test_low_similarity_qualifier_survives_through_final_context():
+    index = InMemoryIndex(FakeEmbeddingProvider())
+    query = "What does this policy cover?"
+    rule = Chunk(
+        "rule",
+        "policy",
+        "sector",
+        "The policy covers ordinary travel.",
+        1,
+        embedding=(1.0, 0.0),
+    )
+    qualifier = Chunk(
+        "qualifier",
+        "policy",
+        "sector",
+        "An exception to policy applies to urgent travel.",
+        2,
+        embedding=(0.0, 1.0),
+    )
+    index.add_document(
+        Document("policy", "Policy", "sector"),
+        [rule, qualifier],
+        [Relationship("rule", "qualifier", RelationshipType.QUALIFIES)],
+    )
+
+    class Planner:
+        def plan(self, _query):
+            return QueryPlan(
+                query,
+                "factual",
+                (
+                    QueryRequirement("main", query, frozenset({"policy", "travel"})),
+                    QueryRequirement("exceptions", query, frozenset({"exception"})),
+                ),
+                True,
+                True,
+            )
+
+    result = Isthmus(index, query_planner=Planner()).query(
+        query,
+        query_vector=(1.0, 0.0),
+        global_hits=(SearchHit(rule, 1.0, 1),),
+    )
+
+    assert result.evidence_packages[0].similarities["qualifier"] == 0.5
+    assert result.evidence_packages[0].requirement_scores["exceptions"] < 0.72
+    assert "exceptions" not in result.evidence_packages[0].supported_requirements
+    assert "qualifier" in result.evidence_packages[0].included_chunk_ids
+    assert "qualifier" in {chunk.id for chunk in result.context}
+
+
 def test_pipeline_does_not_treat_one_term_as_complete_evidence():
     index = InMemoryIndex(CountingEmbeddingProvider())
     index.add_document(

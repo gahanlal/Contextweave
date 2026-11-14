@@ -32,6 +32,23 @@ def test_markdown_preserves_headings_and_parent_relationships():
     )
 
 
+def test_markdown_extracts_qualifies_edges_for_exception_sections():
+    _, chunks, relationships = parse_document_bytes(
+        b"# Policy\n\nTravel costs require manager approval.\n\n"
+        b"## Exceptions\n\nExcept urgent travel, approval is unnecessary.",
+        "policy.md",
+        "Finance",
+        max_words_per_chunk=4,
+    )
+
+    assert any(
+        relation.source_chunk_id == chunks[2].id
+        and relation.target_chunk_id == chunks[4].id
+        and relation.relationship_type == RelationshipType.QUALIFIES
+        for relation in relationships
+    )
+
+
 def test_docx_preserves_heading_and_table_rows():
     document = DocxDocument()
     document.add_heading("Policy", level=1)

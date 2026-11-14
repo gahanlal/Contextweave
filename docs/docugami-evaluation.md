@@ -87,10 +87,9 @@ execution differ between implementations.
 
 ## Re-indexed token-aware comparison
 
-After the historical run, document selection was changed to continue toward its
-existing target when eligible documents remain, and the evaluation adapter
-started splitting chunks using the actual MiniLM tokenizer and 256-token
-limit. The new index has the same 77 PDFs and 171 eligible SEC questions, but
+After the historical run, the evaluation adapter started splitting chunks
+using the actual MiniLM tokenizer and 256-token limit. The new index has the
+same 77 PDFs and 171 eligible SEC questions, but
 9,456 chunks. Directly counting every indexed chunk with the untruncated
 tokenizer found a maximum of 256 tokens and **zero over the limit**.
 
@@ -159,8 +158,12 @@ The first run downloads the pretrained models and may take considerable time and
 local CPU and disk resources. The JSON report records every indexed file, each
 excluded question and every baseline's per-question results. This benchmark
 uses an optional local model adapter only for evaluation; it does not change the
-application's selected embedding provider. The command uses the current
-selection policy, so it does not exactly reproduce the historical scores.
+application's selected embedding provider. The benchmark accepts either
+`--document-selection-policy marginal_coverage` or
+`--document-selection-policy fixed_target` to compare the current
+coverage-driven default with the prior target-oriented policy. The token-aware
+scores above are historical results from the target-oriented policy and are
+not measurements of the new default.
 
 To evaluate the production LLM sector selector on the full-pipeline baseline,
 add `--llm-sector-selection`. This makes one GPT-4o-mini routing request for

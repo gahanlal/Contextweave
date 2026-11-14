@@ -22,9 +22,64 @@ class NoExtractableTextError(ValueError):
     pass
 
 
+_QUALIFIER_PATTERN = re.compile(
+    r"\b(?:except(?:ion(?:s)?)?|unless|provided\s+that|subject\s+to|"
+    r"notwithstanding|does\s+not\s+apply|do\s+not\s+apply|"
+    r"exempt(?:ion|ions|ed)?|waiv(?:e|ed|er|ers)|"
+    r"qualif(?:y|ies|ied|ication|ications)|exclud(?:e|es|ed|ing))\b",
+    re.IGNORECASE,
+)
+
+
 def _require_sector(sector_id: str) -> None:
     if not isinstance(sector_id, str) or not sector_id.strip():
         raise ValueError("An explicit non-empty sector is required.")
+
+
+def _qualifies_relationships(chunks: list[Chunk]) -> tuple[Relationship, ...]:
+    """Link nearby rule chunks to explicit exception or qualification chunks."""
+    relationships = []
+    for position, qualifier in enumerate(chunks):
+        if qualifier.chunk_type == "heading":
+            continue
+        qualifier_heading = any(
+            _QUALIFIER_PATTERN.search(heading) for heading in qualifier.heading_path
+        )
+        if not qualifier_heading and not _QUALIFIER_PATTERN.search(qualifier.content):
+            continue
+
+        nearby_positions = range(max(0, position - 3), position)
+        candidates = [
+            chunks[index]
+            for index in nearby_positions
+            if chunks[index].chunk_type != "heading"
+            and not _QUALIFIER_PATTERN.search(chunks[index].content)
+            and (
+                chunks[index].section_id == qualifier.section_id
+                or qualifier_heading
+            )
+        ]
+        if candidates:
+            source = candidates[-1]
+        else:
+            following_positions = range(position + 1, min(len(chunks), position + 4))
+            following = [
+                chunks[index]
+                for index in following_positions
+                if chunks[index].chunk_type != "heading"
+                and not _QUALIFIER_PATTERN.search(chunks[index].content)
+                and (
+                    chunks[index].section_id == qualifier.section_id
+                    or qualifier_heading
+                )
+            ]
+            if not following:
+                continue
+            source = following[0]
+        relationships.append(
+            Relationship(source.id, qualifier.id, RelationshipType.QUALIFIES)
+        )
+    return tuple(relationships)
 
 
 def _source_identity(stream: BinaryIO) -> tuple[str, str]:
@@ -126,6 +181,7 @@ def _parse_pdf_stream(
                 ),
             )
         )
+    relationships.extend(_qualifies_relationships(chunks))
     return document, tuple(chunks), tuple(relationships)
 
 

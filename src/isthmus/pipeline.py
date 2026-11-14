@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import logging
+from typing import Literal
 
 from isthmus.coverage import aggregate_coverage, coverage_status, semantic_scores
 from isthmus.embeddings import embed_many, normalize_vector
@@ -31,6 +32,8 @@ class PipelineConfig:
     fallback_document_pool: int = 10
     target_documents: int = 3
     max_selected_documents: int = 5
+    document_selection_policy: Literal["fixed_target", "marginal_coverage"] = "marginal_coverage"
+    minimum_marginal_coverage: float = 0.05
     global_token_budget: int = 4500
     traversal: TraversalConfig = TraversalConfig()
 
@@ -139,6 +142,8 @@ class Isthmus:
             plan,
             target_documents=self.config.target_documents,
             max_documents=self.config.max_selected_documents,
+            selection_policy=self.config.document_selection_policy,
+            minimum_marginal_coverage=self.config.minimum_marginal_coverage,
         )
         context = self._assemble_context(selected_documents, packages, plan, requirement_similarity)
         coverage = self._coverage(plan, context, requirement_similarity)
@@ -172,6 +177,8 @@ class Isthmus:
                     plan,
                     target_documents=self.config.target_documents,
                     max_documents=self.config.max_selected_documents,
+                    selection_policy=self.config.document_selection_policy,
+                    minimum_marginal_coverage=self.config.minimum_marginal_coverage,
                 )
                 context = self._assemble_context(selected_documents, packages, plan, requirement_similarity)
                 coverage = self._coverage(plan, context, requirement_similarity)

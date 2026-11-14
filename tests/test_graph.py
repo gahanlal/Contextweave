@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from isthmus.graph import AdaptiveGraphRetriever, TraversalConfig
 from isthmus.models import (
     Chunk,
@@ -144,6 +146,63 @@ def test_qualifies_relationship_is_followed_for_exception_queries():
     evidence = retriever.retrieve("doc", plan, hits)
     assert "exception" in evidence.included_chunk_ids
     assert RelationshipType.QUALIFIES in evidence.relationship_types_followed
+
+
+def test_low_similarity_qualifier_is_included_below_the_normal_threshold():
+    scores = [("seed", 0.9), ("exception", 0.5)]
+    retriever, plan, hits = setup_graph(
+        scores,
+        [Relationship("seed", "exception", RelationshipType.QUALIFIES)],
+    )
+
+    evidence = retriever.retrieve("doc", plan, hits)
+
+    assert "exception" in evidence.visited_chunk_ids
+    assert "exception" in evidence.included_chunk_ids
+
+
+def test_qualifier_below_its_own_threshold_is_not_traversed():
+    scores = [("seed", 0.9), ("exception", 0.4)]
+    retriever, plan, hits = setup_graph(
+        scores,
+        [Relationship("seed", "exception", RelationshipType.QUALIFIES)],
+    )
+
+    evidence = retriever.retrieve("doc", plan, hits)
+
+    assert "exception" not in evidence.visited_chunk_ids
+
+
+def test_non_exception_queries_do_not_follow_qualifies_relationships():
+    scores = [("seed", 0.9), ("exception", 0.8)]
+    retriever, plan, hits = setup_graph(
+        scores,
+        [Relationship("seed", "exception", RelationshipType.QUALIFIES)],
+    )
+
+    evidence = retriever.retrieve(
+        "doc",
+        replace(plan, asks_exceptions=False),
+        hits,
+    )
+
+    assert "exception" not in evidence.visited_chunk_ids
+
+
+def test_qualifies_edge_is_followed_from_a_sequentially_reached_chunk():
+    scores = [("seed", 0.9), ("rule", 0.9), ("exception", 0.5)]
+    edges = sequential_edges(["seed", "rule"])
+    edges.append(Relationship("rule", "exception", RelationshipType.QUALIFIES))
+    retriever, plan, hits = setup_graph(scores, edges)
+
+    evidence = retriever.retrieve("doc", plan, hits)
+
+    assert "exception" in evidence.included_chunk_ids
+    assert any(
+        path.chunk_ids == ("seed", "rule", "exception")
+        and path.relationship_types[-1] == RelationshipType.QUALIFIES
+        for path in evidence.paths
+    )
 
 
 def test_node_limit_is_respected():

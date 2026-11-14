@@ -116,7 +116,7 @@ class AdaptiveGraphRetriever:
         followed: list[RelationshipType] = []
         visited_set: set[str] = set()
         included_set: set[str] = set()
-        expanded_states: set[tuple[str, RelationshipType | None]] = set()
+        expanded_states: set[tuple[str, RelationshipType | None, bool]] = set()
         direction_counts = {RelationshipType.PREVIOUS: 0, RelationshipType.NEXT: 0}
         requirement_scores_cache: dict[str, dict[str, float]] = {}
         topic_terms = frozenset().union(
@@ -137,7 +137,10 @@ class AdaptiveGraphRetriever:
             state = queue.popleft()
             if state.chunk_id not in document_chunks:
                 continue
-            state_key = (state.chunk_id, state.direction)
+            reached_by_qualifies = bool(state.edge_types) and (
+                state.edge_types[-1] == RelationshipType.QUALIFIES
+            )
+            state_key = (state.chunk_id, state.direction, reached_by_qualifies)
             if state_key in expanded_states:
                 continue
             expanded_states.add(state_key)
@@ -150,7 +153,16 @@ class AdaptiveGraphRetriever:
                 visited_set.add(state.chunk_id)
                 visited.append(state.chunk_id)
             supports_requirement = any(score >= SUFFICIENT for score in scores_for(chunk).values())
-            should_include = score >= self.config.include_threshold or supports_requirement
+            qualifying_evidence = (
+                query_plan.asks_exceptions
+                and reached_by_qualifies
+                and score >= self.config.qualifies_threshold
+            )
+            should_include = (
+                score >= self.config.include_threshold
+                or supports_requirement
+                or qualifying_evidence
+            )
             if state.chunk_id in seen_seeds:
                 should_include = True
             if should_include and state.chunk_id not in included_set:
@@ -182,13 +194,16 @@ class AdaptiveGraphRetriever:
                     similarities[next_id] = next_score
                 is_qualifies = edge.relationship_type == RelationshipType.QUALIFIES
                 low_streak = 0 if next_score >= self.config.include_threshold else state.low_similarity_streak + 1
-                can_traverse = (
-                    next_score >= self.config.include_threshold
-                    or low_streak <= self.config.max_low_similarity_bridges
-                    or (is_qualifies and query_plan.asks_exceptions)
-                )
-                if is_qualifies and query_plan.asks_exceptions:
-                    can_traverse = next_score >= self.config.qualifies_threshold or low_streak <= self.config.max_low_similarity_bridges
+                if is_qualifies:
+                    can_traverse = (
+                        query_plan.asks_exceptions
+                        and next_score >= self.config.qualifies_threshold
+                    )
+                else:
+                    can_traverse = (
+                        next_score >= self.config.include_threshold
+                        or low_streak <= self.config.max_low_similarity_bridges
+                    )
                 if not can_traverse:
                     continue
                 paths.append(
@@ -252,7 +267,10 @@ class AdaptiveGraphRetriever:
             if edge.relationship_type not in eligible:
                 continue
             if direction in (RelationshipType.PREVIOUS, RelationshipType.NEXT):
-                if edge.relationship_type != direction:
+                if edge.relationship_type not in (
+                    direction,
+                    RelationshipType.QUALIFIES,
+                ):
                     continue
             elif edge.relationship_type == RelationshipType.PREVIOUS or edge.relationship_type == RelationshipType.NEXT:
                 continue
